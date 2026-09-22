@@ -1,0 +1,28 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <circle cx="100" cy="100" r="100" fill="#3B82F6"/>
+
+  <!-- Head -->
+  <circle cx="100" cy="70" r="35" fill="#FCD34D"/>
+
+  <!-- Eyes -->
+  <circle cx="90" cy="65" r="4" fill="#1F2937"/>
+  <circle cx="110" cy="65" r="4" fill="#1F2937"/>
+
+  <!-- Smile -->
+  <path d="M 90 75 Q 100 82 110 75" stroke="#1F2937" stroke-width="2" fill="none" stroke-linecap="round"/>
+
+  <!-- Body (PM Style - Business) -->
+  <rect x="65" y="105" width="70" height="50" fill="#1F2937" rx="5"/>
+
+  <!-- Shirt -->
+  <rect x="75" y="110" width="50" height="25" fill="#EF4444" rx="3"/>
+
+  <!-- Badge/Pin (PM) -->
+  <circle cx="155" cy="125" r="8" fill="#10B981"/>
+  <text x="155" y="130" font-size="10" font-weight="bold" fill="white" text-anchor="middle" alignment-baseline="middle">PM</text>
+
+  <!-- Arms -->
+  <rect x="50" y="115" width="15" height="35" fill="#FCD34D" rx="7"/>
+  <rect x="135" y="115" width="15" height="35" fill="#FCD34D" rx="7"/>
+</svg>
