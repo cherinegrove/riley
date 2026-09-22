@@ -317,6 +317,26 @@ app.get('/config', (_req: Request, res: Response) => {
   });
 });
 
+/**
+ * Test endpoint - manually trigger daily digest
+ */
+app.post('/test/digest', async (_req: Request, res: Response) => {
+  try {
+    logger.info('Manual digest test triggered');
+    await dailyDigest.runDigest();
+    res.status(200).json({
+      status: 'success',
+      message: 'Daily digest test completed. Check logs for results.',
+    });
+  } catch (error) {
+    logger.error('Digest test failed', { error: String(error) });
+    res.status(500).json({
+      status: 'error',
+      error: String(error),
+    });
+  }
+});
+
 // Initialize daily digest scheduler
 const dailyDigest = createDailyDigest(donezy);
 dailyDigest.start();

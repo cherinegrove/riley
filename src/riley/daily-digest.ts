@@ -27,7 +27,7 @@ export class DailyDigest {
     console.log('[DailyDigest] Scheduler started - will run daily at 7am SAST');
   }
 
-  private async runDigest(): Promise<void> {
+  async runDigest(): Promise<void> {
     try {
       console.log('[DailyDigest] Fetching all at-risk tasks grouped by assignee');
       const tasksByAssignee = await this.donezy.getAllRiskTasksGroupedByAssignee();
