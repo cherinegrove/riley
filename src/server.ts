@@ -338,6 +338,34 @@ app.post('/test/digest', async (_req: Request, res: Response) => {
 });
 
 /**
+ * Test endpoint - list all assignees with task counts
+ */
+app.get('/test/assignees', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const allTasks = await donezy.getAllTasks();
+    const assigneeCounts: { [key: string]: number } = {};
+
+    allTasks.forEach((t) => {
+      assigneeCounts[t.assigned_to] = (assigneeCounts[t.assigned_to] || 0) + 1;
+    });
+
+    res.status(200).json({
+      status: 'success',
+      totalTasks: allTasks.length,
+      assignees: Object.entries(assigneeCounts)
+        .map(([name, count]) => ({ name, taskCount: count }))
+        .sort((a, b) => b.taskCount - a.taskCount),
+    });
+  } catch (error) {
+    logger.error('Assignees list failed', { error: String(error) });
+    res.status(500).json({
+      status: 'error',
+      error: String(error),
+    });
+  }
+});
+
+/**
  * Test endpoint - check at-risk tasks for a specific person
  */
 app.post('/test/digest/:assignee', async (req: Request, res: Response): Promise<void> => {
