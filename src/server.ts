@@ -337,6 +337,79 @@ app.post('/test/digest', async (_req: Request, res: Response) => {
   }
 });
 
+/**
+ * Test endpoint - check at-risk tasks for a specific person
+ */
+app.post('/test/digest/:assignee', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const assignee = req.params.assignee;
+    logger.info(`Testing digest for assignee: ${assignee}`);
+
+    // Fetch tasks for this assignee
+    const allTasks = await donezy.getAllTasks();
+    const assigneeTasks = allTasks.filter((t) => t.assigned_to === assignee);
+
+    if (assigneeTasks.length === 0) {
+      res.status(200).json({
+        assignee,
+        status: 'no_tasks',
+        message: `No tasks found for ${assignee}`,
+      });
+      return;
+    }
+
+    // Filter for at-risk tasks
+    const now = new Date();
+    const atRiskTasks = assigneeTasks.filter((task) => {
+      // Check if overdue
+      if (task.days_overdue && task.days_overdue > 0) return true;
+
+      // Check if awaiting feedback 24+ hours
+      if (task.status === 'awaiting_feedback_internal' || task.status === 'awaiting_feedback_external') {
+        const hoursSinceUpdate = Math.floor((now.getTime() - new Date(task.updated_at).getTime()) / (1000 * 60 * 60));
+        if (hoursSinceUpdate >= 24) return true;
+      }
+
+      // Check if not updated in 7+ days
+      const daysSinceUpdate = Math.floor((now.getTime() - new Date(task.updated_at).getTime()) / (1000 * 60 * 60 * 24));
+      if (daysSinceUpdate >= 7) return true;
+
+      return false;
+    });
+
+    // Group by risk type
+    const overdue = atRiskTasks.filter((t) => t.days_overdue && t.days_overdue > 0);
+    const stale = atRiskTasks.filter((t) => {
+      const daysSinceUpdate = Math.floor((now.getTime() - new Date(t.updated_at).getTime()) / (1000 * 60 * 60 * 24));
+      return daysSinceUpdate >= 7;
+    });
+    const awaitingFeedback = atRiskTasks.filter(
+      (t) => t.status === 'awaiting_feedback_internal' || t.status === 'awaiting_feedback_external'
+    );
+
+    res.status(200).json({
+      assignee,
+      status: 'success',
+      totalTasks: assigneeTasks.length,
+      atRiskCount: atRiskTasks.length,
+      breakdown: {
+        overdue: overdue.map((t) => ({ title: t.title, project: t.project_name, daysOverdue: t.days_overdue })),
+        awaitingFeedback: awaitingFeedback.map((t) => ({ title: t.title, project: t.project_name, status: t.status })),
+        stale: stale.map((t) => {
+          const daysSinceUpdate = Math.floor((now.getTime() - new Date(t.updated_at).getTime()) / (1000 * 60 * 60 * 24));
+          return { title: t.title, project: t.project_name, daysSinceUpdate };
+        }),
+      },
+    });
+  } catch (error) {
+    logger.error('Assignee digest test failed', { error: String(error) });
+    res.status(500).json({
+      status: 'error',
+      error: String(error),
+    });
+  }
+});
+
 // Initialize daily digest scheduler
 const dailyDigest = createDailyDigest(donezy);
 dailyDigest.start();
