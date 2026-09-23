@@ -19,21 +19,7 @@ export class DonezyIntegration {
 
       if (error) throw error;
 
-      return (
-        data?.map((row: any) => ({
-          id: row.id,
-          title: row.title,
-          description: row.description,
-          project_name: row.project_name,
-          status: row.status,
-          priority: row.priority,
-          assigned_to: row.assigned_to,
-          due_date: row.due_date,
-          created_at: row.created_at,
-          updated_at: row.updated_at,
-          days_overdue: this.calculateDaysOverdue(row.due_date, row.status),
-        })) || []
-      );
+      return data?.map((row: any) => this.mapRowToTask(row)) || [];
     } catch (error) {
       console.error('Error fetching Donezy tasks:', error);
       return [];
@@ -52,17 +38,7 @@ export class DonezyIntegration {
 
       const tasks =
         data?.map((row: any) => ({
-          id: row.id,
-          title: row.title,
-          description: row.description,
-          project_name: row.project_name,
-          status: row.status,
-          priority: row.priority,
-          assigned_to: row.assigned_to,
-          due_date: row.due_date,
-          created_at: row.created_at,
-          updated_at: row.updated_at,
-          days_overdue: this.calculateDaysOverdue(row.due_date, row.status),
+          ...this.mapRowToTask(row),
         })) || [];
 
       // Filter to only overdue tasks
@@ -83,21 +59,7 @@ export class DonezyIntegration {
 
       if (error) throw error;
 
-      return (
-        data?.map((row: any) => ({
-          id: row.id,
-          title: row.title,
-          description: row.description,
-          project_name: row.project_name,
-          status: row.status,
-          priority: row.priority,
-          assigned_to: row.assigned_to,
-          due_date: row.due_date,
-          created_at: row.created_at,
-          updated_at: row.updated_at,
-          days_overdue: this.calculateDaysOverdue(row.due_date, row.status),
-        })) || []
-      );
+      return data?.map((row: any) => this.mapRowToTask(row)) || [];
     } catch (error) {
       console.error('Error fetching all tasks:', error);
       return [];
@@ -214,6 +176,22 @@ export class DonezyIntegration {
       console.error('Error fetching stale tasks:', error);
       return [];
     }
+  }
+
+  private mapRowToTask(row: any): DonezyTask {
+    return {
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      project_name: row.project_name || `Project ${row.project_id}`,
+      status: row.status,
+      priority: row.priority,
+      assigned_to: row.assignee_name || row.assigned_to || 'Unassigned',
+      due_date: row.due_date,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      days_overdue: this.calculateDaysOverdue(row.due_date, row.status),
+    };
   }
 
   private calculateDaysOverdue(dueDate: string | null | undefined, status: string): number | undefined {
