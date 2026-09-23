@@ -12,7 +12,7 @@ export class DonezyIntegration {
   async getTasksByProjectName(projectName: string): Promise<DonezyTask[]> {
     try {
       const { data, error } = await this.supabase
-        .from('tasks')
+        .from('tasks_with_assignees')
         .select('*')
         .ilike('project_name', `%${projectName}%`)
         .order('due_date', { ascending: true });
@@ -43,7 +43,7 @@ export class DonezyIntegration {
   async getOverdueTasks(): Promise<DonezyTask[]> {
     try {
       const { data, error } = await this.supabase
-        .from('tasks')
+        .from('tasks_with_assignees')
         .select('*')
         .neq('status', 'completed')
         .order('due_date', { ascending: true });
@@ -76,7 +76,7 @@ export class DonezyIntegration {
   async getAllTasks(): Promise<DonezyTask[]> {
     try {
       const { data, error } = await this.supabase
-        .from('tasks')
+        .from('tasks_with_assignees')
         .select('*')
         .neq('status', 'completed')
         .order('priority', { ascending: false });
@@ -108,7 +108,7 @@ export class DonezyIntegration {
     try {
       const normalized = clientName.toLowerCase().trim();
       const { data, error } = await this.supabase
-        .from('tasks')
+        .from('tasks_with_assignees')
         .select('*')
         .neq('status', 'completed')
         .order('due_date', { ascending: true });
@@ -143,7 +143,7 @@ export class DonezyIntegration {
   async getStaleAwaitingFeedbackTasks(): Promise<DonezyTask[]> {
     try {
       const { data, error } = await this.supabase
-        .from('tasks')
+        .from('tasks_with_assignees')
         .select('*')
         .in('status', ['awaiting_feedback_internal', 'awaiting_feedback_external'])
         .order('updated_at', { ascending: true });
@@ -183,7 +183,7 @@ export class DonezyIntegration {
   async getTasksNotUpdatedInDays(days: number = 7): Promise<DonezyTask[]> {
     try {
       const { data, error } = await this.supabase
-        .from('tasks')
+        .from('tasks_with_assignees')
         .select('*')
         .neq('status', 'completed')
         .order('updated_at', { ascending: true });
@@ -231,7 +231,7 @@ export class DonezyIntegration {
   async getAllRiskTasksGroupedByAssignee(): Promise<{ [assignee: string]: DonezyTask[] }> {
     try {
       const { data, error } = await this.supabase
-        .from('tasks')
+        .from('tasks_with_assignees')
         .select('*')
         .neq('status', 'completed')
         .neq('status', 'done')

@@ -11,7 +11,7 @@ export const getConfig = (): RileyConfig => {
     },
     donezy: {
       url: process.env.DONEZY_SUPABASE_URL || '',
-      key: process.env.DONEZY_SUPABASE_KEY || '',
+      key: process.env.DONEZY_SUPABASE_SERVICE_ROLE_KEY || process.env.DONEZY_SUPABASE_KEY || '',
     },
     hubspot: {
       apiKey: process.env.HUBSPOT_API_KEY || '',
