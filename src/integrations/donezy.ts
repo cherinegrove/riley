@@ -113,19 +113,7 @@ export class DonezyIntegration {
       if (error) throw error;
 
       const now = new Date();
-      const tasks = data?.map((row: any) => ({
-        id: row.id,
-        title: row.title,
-        description: row.description,
-        project_name: row.project_name,
-        status: row.status,
-        priority: row.priority,
-        assigned_to: row.assigned_to,
-        due_date: row.due_date,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        days_overdue: this.calculateDaysOverdue(row.due_date, row.status),
-      })) || [];
+      const tasks = data?.map((row: any) => this.mapRowToTask(row)) || [];
 
       // Filter: Both internal and external 24+ hours
       return tasks.filter((task) => {
@@ -153,19 +141,7 @@ export class DonezyIntegration {
       if (error) throw error;
 
       const now = new Date();
-      const tasks = data?.map((row: any) => ({
-        id: row.id,
-        title: row.title,
-        description: row.description,
-        project_name: row.project_name,
-        status: row.status,
-        priority: row.priority,
-        assigned_to: row.assigned_to,
-        due_date: row.due_date,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        days_overdue: this.calculateDaysOverdue(row.due_date, row.status),
-      })) || [];
+      const tasks = data?.map((row: any) => this.mapRowToTask(row)) || [];
 
       // Filter: not updated in X days
       return tasks.filter((task) => {
@@ -214,24 +190,12 @@ export class DonezyIntegration {
         .neq('status', 'completed')
         .neq('status', 'done')
         .neq('status', 'backlog')
-        .order('assigned_to', { ascending: true });
+        .order('assignee_name', { ascending: true });
 
       if (error) throw error;
 
       const now = new Date();
-      const tasks = data?.map((row: any) => ({
-        id: row.id,
-        title: row.title,
-        description: row.description,
-        project_name: row.project_name,
-        status: row.status,
-        priority: row.priority,
-        assigned_to: row.assigned_to,
-        due_date: row.due_date,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        days_overdue: this.calculateDaysOverdue(row.due_date, row.status),
-      })) || [];
+      const tasks = data?.map((row: any) => this.mapRowToTask(row)) || [];
 
       // Filter for risk items
       const riskTasks = tasks.filter((task) => {
