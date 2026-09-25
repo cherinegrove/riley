@@ -371,33 +371,33 @@ app.get('/test/assignees', async (_req: Request, res: Response): Promise<void> =
 app.post('/test/digest-detailed/:assignee', async (req: Request, res: Response): Promise<void> => {
   try {
     const assignee = req.params.assignee;
-    const allTasks = await donezy.getAllTasks();
-    const assigneeTasks = allTasks.filter((t) => t.assigned_to === assignee);
+    const allRiskTasks = await donezy.getAllRiskTasksGroupedByAssignee();
+    const assigneeTasks = allRiskTasks[assignee] || [];
 
     if (assigneeTasks.length === 0) {
       res.status(200).json({
         assignee,
-        status: 'no_tasks',
-        message: `No tasks found for ${assignee}`,
+        status: 'no_at_risk_tasks',
+        message: `No at-risk tasks found for ${assignee}`,
       });
       return;
     }
 
     const now = new Date();
 
-    // Categorize tasks
+    // Categorize by risk type
     const overdue = assigneeTasks.filter((t) => t.days_overdue && t.days_overdue > 0);
     const awaitingFeedbackInternal = assigneeTasks.filter((t) => t.status === 'awaiting_feedback_internal');
     const awaitingFeedbackExternal = assigneeTasks.filter((t) => t.status === 'awaiting_feedback_external');
     const stale = assigneeTasks.filter((t) => {
       const daysSinceUpdate = Math.floor((now.getTime() - new Date(t.updated_at).getTime()) / (1000 * 60 * 60 * 24));
-      return daysSinceUpdate >= 7;
+      return daysSinceUpdate >= 7 && !t.days_overdue;
     });
 
     res.status(200).json({
       assignee,
       status: 'success',
-      totalTasks: assigneeTasks.length,
+      totalAtRiskTasks: assigneeTasks.length,
       breakdown: {
         overdue: overdue.map((t) => ({
           title: t.title,
