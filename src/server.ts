@@ -366,6 +366,92 @@ app.get('/test/assignees', async (_req: Request, res: Response): Promise<void> =
 });
 
 /**
+ * Test endpoint - detailed breakdown by status
+ */
+app.post('/test/digest-detailed/:assignee', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const assignee = req.params.assignee;
+    const allTasks = await donezy.getAllTasks();
+    const assigneeTasks = allTasks.filter((t) => t.assigned_to === assignee);
+
+    if (assigneeTasks.length === 0) {
+      res.status(200).json({
+        assignee,
+        status: 'no_tasks',
+        message: `No tasks found for ${assignee}`,
+      });
+      return;
+    }
+
+    const now = new Date();
+
+    // Categorize tasks
+    const overdue = assigneeTasks.filter((t) => t.days_overdue && t.days_overdue > 0);
+    const awaitingFeedbackInternal = assigneeTasks.filter((t) => t.status === 'awaiting_feedback_internal');
+    const awaitingFeedbackExternal = assigneeTasks.filter((t) => t.status === 'awaiting_feedback_external');
+    const stale = assigneeTasks.filter((t) => {
+      const daysSinceUpdate = Math.floor((now.getTime() - new Date(t.updated_at).getTime()) / (1000 * 60 * 60 * 24));
+      return daysSinceUpdate >= 7;
+    });
+
+    res.status(200).json({
+      assignee,
+      status: 'success',
+      totalTasks: assigneeTasks.length,
+      breakdown: {
+        overdue: overdue.map((t) => ({
+          title: t.title,
+          status: 'OVERDUE',
+          daysOverdue: t.days_overdue,
+          dueDate: t.due_date,
+          project: t.project_name,
+          category: `${t.days_overdue} days past due`,
+        })),
+        awaitingFeedbackInternal: awaitingFeedbackInternal.map((t) => {
+          const hoursSinceUpdate = Math.floor((now.getTime() - new Date(t.updated_at).getTime()) / (1000 * 60 * 60));
+          return {
+            title: t.title,
+            status: 'AWAITING FEEDBACK (Internal)',
+            hoursSinceUpdate,
+            lastUpdated: t.updated_at,
+            project: t.project_name,
+            category: `Waiting ${hoursSinceUpdate}h for internal feedback`,
+          };
+        }),
+        awaitingFeedbackExternal: awaitingFeedbackExternal.map((t) => {
+          const hoursSinceUpdate = Math.floor((now.getTime() - new Date(t.updated_at).getTime()) / (1000 * 60 * 60));
+          return {
+            title: t.title,
+            status: 'AWAITING FEEDBACK (External)',
+            hoursSinceUpdate,
+            lastUpdated: t.updated_at,
+            project: t.project_name,
+            category: `Waiting ${hoursSinceUpdate}h for external feedback`,
+          };
+        }),
+        stale: stale.map((t) => {
+          const daysSinceUpdate = Math.floor((now.getTime() - new Date(t.updated_at).getTime()) / (1000 * 60 * 60 * 24));
+          return {
+            title: t.title,
+            status: t.status,
+            daysSinceUpdate,
+            lastUpdated: t.updated_at,
+            project: t.project_name,
+            category: `Not updated for ${daysSinceUpdate} days`,
+          };
+        }),
+      },
+    });
+  } catch (error) {
+    logger.error('Detailed digest failed', { error: String(error) });
+    res.status(500).json({
+      status: 'error',
+      error: String(error),
+    });
+  }
+});
+
+/**
  * Test endpoint - check at-risk tasks for a specific person
  */
 app.post('/test/digest/:assignee', async (req: Request, res: Response): Promise<void> => {
