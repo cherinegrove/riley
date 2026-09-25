@@ -1,12 +1,9 @@
 import * as cron from 'node-cron';
-import axios from 'axios';
 import { DonezyIntegration } from '../integrations/donezy';
-import { getJWTAuth } from '../utils/jwt-auth';
 import { DonezyTask } from '../utils/types';
 
 export class DailyDigest {
   private donezy: DonezyIntegration;
-  private jwtAuth = getJWTAuth();
 
   constructor(donezy: DonezyIntegration) {
     this.donezy = donezy;
@@ -92,77 +89,17 @@ export class DailyDigest {
 
       message += `Please review and update these tasks in Donezy.`;
 
-      // Send direct message to assignee
-      await this.sendDirectMessageToUser(assignee, message);
+      // TODO: Send direct message to assignee via Google Chat
+      // For now, just log the message that would be sent
+      console.log(`[DailyDigest] Message for ${assignee}:\n${message}`);
     } catch (error) {
       console.error(`[DailyDigest] Error sending digest to ${assignee}:`, error);
     }
   }
 
-  private async sendDirectMessageToUser(displayName: string, message: string): Promise<void> {
-    try {
-      // Search for user by display name
-      const token = await this.jwtAuth.getAccessToken();
-      const searchUrl = 'https://chat.googleapis.com/v1/users:search';
-
-      console.log(`[DailyDigest] Searching for user: ${displayName}`);
-
-      const { data: searchResult } = await axios.post(
-        searchUrl,
-        {
-          query: displayName,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      const foundUser = searchResult.results?.[0];
-      if (!foundUser) {
-        console.warn(`[DailyDigest] Could not find user with name: ${displayName}`);
-        return;
-      }
-
-      // Create a direct message space with the user
-      const spaceUrl = 'https://chat.googleapis.com/v1/spaces';
-      const { data: space } = await axios.post(
-        spaceUrl,
-        {
-          displayName: `Task Digest - ${displayName}`,
-          spaceType: 'DIRECT_MESSAGE',
-          memberIds: [foundUser.name], // Google Chat user ID
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      // Send message to the DM space
-      const messageUrl = `https://chat.googleapis.com/v1/${space.name}/messages`;
-      await axios.post(
-        messageUrl,
-        {
-          text: message,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      console.log(`[DailyDigest] Successfully sent digest to ${displayName}`);
-    } catch (error) {
-      console.error(`[DailyDigest] Error sending direct message to ${displayName}:`, error);
-    }
-  }
+  // TODO: Implement Google Chat direct messaging
+  // Currently disabled due to users:search endpoint returning 404
+  // Will need to integrate with HubSpot to find user emails or use a user mapping table
 }
 
 export const createDailyDigest = (donezy: DonezyIntegration): DailyDigest => {
