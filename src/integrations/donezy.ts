@@ -197,8 +197,14 @@ export class DonezyIntegration {
       const now = new Date();
       const tasks = data?.map((row: any) => this.mapRowToTask(row)) || [];
 
-      // Filter for risk items
+      // Filter for risk items - only active tasks (not completed/done)
       const riskTasks = tasks.filter((task) => {
+        // Only include tasks in active states
+        const activeStatuses = ['todo', 'in_progress', 'awaiting_feedback_internal', 'awaiting_feedback_external', 'blocked'];
+        if (!activeStatuses.includes(task.status as string)) {
+          return false;
+        }
+
         // Check if overdue
         if (task.days_overdue && task.days_overdue > 0) return true;
 
