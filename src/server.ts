@@ -76,29 +76,47 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
         const company = await hubspot.getCompanyLastContacted(query.clientName);
         responseData.meetings = company.meetings || [];
       } else if (query.type === 'risk_review' && query.clientName) {
-        logger.addDataSource('hubspot');
-        const company = await hubspot.getCompanyLastContacted(query.clientName);
-        responseData.lastContacted = company.lastContacted || undefined;
-        responseData.unrepliedEmails = company.unrepliedEmails || [];
-        responseData.meetings = company.meetings || [];
-
         logger.addDataSource('donezy');
-        const clientTasks = await donezy.getTasksByClientName(query.clientName);
 
-        // Filter at-risk tasks to only include those for this client
-        const allOverdueTasks = await donezy.getOverdueTasks();
-        const allStaleTasks = await donezy.getTasksNotUpdatedInDays(7);
-        const allAwaitingFeedbackTasks = await donezy.getStaleAwaitingFeedbackTasks();
+        // Check if this is an assignee name first
+        const assigneeAtRiskTasks = await donezy.getAtRiskTasksForAssignee(query.clientName);
 
-        const clientNameLower = query.clientName.toLowerCase();
-        const overdueTasks = allOverdueTasks.filter(t => t.project_name?.toLowerCase().includes(clientNameLower));
-        const staleTasks = allStaleTasks.filter(t => t.project_name?.toLowerCase().includes(clientNameLower));
-        const awaitingFeedbackTasks = allAwaitingFeedbackTasks.filter(t => t.project_name?.toLowerCase().includes(clientNameLower));
+        if (assigneeAtRiskTasks.length > 0) {
+          // It's an assignee - show their at-risk tasks
+          responseData.tasks = assigneeAtRiskTasks;
+          responseData.overdueTasks = assigneeAtRiskTasks.filter(t => t.days_overdue && t.days_overdue > 0);
+          responseData.staleTasks = assigneeAtRiskTasks.filter(t => {
+            const daysSinceUpdate = Math.floor((new Date().getTime() - new Date(t.updated_at).getTime()) / (1000 * 60 * 60 * 24));
+            return daysSinceUpdate >= 7 && (!t.days_overdue || t.days_overdue <= 0);
+          });
+          responseData.awaitingFeedbackTasks = assigneeAtRiskTasks.filter(t =>
+            t.status === 'awaiting_feedback_internal' || t.status === 'awaiting_feedback_external'
+          );
+        } else {
+          // It's a client - show their client-level risk review
+          logger.addDataSource('hubspot');
+          const company = await hubspot.getCompanyLastContacted(query.clientName);
+          responseData.lastContacted = company.lastContacted || undefined;
+          responseData.unrepliedEmails = company.unrepliedEmails || [];
+          responseData.meetings = company.meetings || [];
 
-        responseData.tasks = clientTasks;
-        responseData.overdueTasks = overdueTasks;
-        responseData.staleTasks = staleTasks;
-        responseData.awaitingFeedbackTasks = awaitingFeedbackTasks;
+          const clientTasks = await donezy.getTasksByClientName(query.clientName);
+
+          // Filter at-risk tasks to only include those for this client
+          const allOverdueTasks = await donezy.getOverdueTasks();
+          const allStaleTasks = await donezy.getTasksNotUpdatedInDays(7);
+          const allAwaitingFeedbackTasks = await donezy.getStaleAwaitingFeedbackTasks();
+
+          const clientNameLower = query.clientName.toLowerCase();
+          const overdueTasks = allOverdueTasks.filter(t => t.project_name?.toLowerCase().includes(clientNameLower));
+          const staleTasks = allStaleTasks.filter(t => t.project_name?.toLowerCase().includes(clientNameLower));
+          const awaitingFeedbackTasks = allAwaitingFeedbackTasks.filter(t => t.project_name?.toLowerCase().includes(clientNameLower));
+
+          responseData.tasks = clientTasks;
+          responseData.overdueTasks = overdueTasks;
+          responseData.staleTasks = staleTasks;
+          responseData.awaitingFeedbackTasks = awaitingFeedbackTasks;
+        }
       }
 
       const responseText = responder.generateResponse(query, responseData);
@@ -243,29 +261,47 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
 
       case 'risk_review': {
         if (query.clientName) {
-          logger.addDataSource('hubspot');
-          const company = await hubspot.getCompanyLastContacted(query.clientName);
-          responseData.lastContacted = company.lastContacted || undefined;
-          responseData.unrepliedEmails = company.unrepliedEmails || [];
-          responseData.meetings = company.meetings || [];
-
           logger.addDataSource('donezy');
-          const clientTasks = await donezy.getTasksByClientName(query.clientName);
 
-          // Filter at-risk tasks to only include those for this client
-          const allOverdueTasks = await donezy.getOverdueTasks();
-          const allStaleTasks = await donezy.getTasksNotUpdatedInDays(7);
-          const allAwaitingFeedbackTasks = await donezy.getStaleAwaitingFeedbackTasks();
+          // Check if this is an assignee name first
+          const assigneeAtRiskTasks = await donezy.getAtRiskTasksForAssignee(query.clientName);
 
-          const clientNameLower = query.clientName.toLowerCase();
-          const overdueTasks = allOverdueTasks.filter(t => t.project_name?.toLowerCase().includes(clientNameLower));
-          const staleTasks = allStaleTasks.filter(t => t.project_name?.toLowerCase().includes(clientNameLower));
-          const awaitingFeedbackTasks = allAwaitingFeedbackTasks.filter(t => t.project_name?.toLowerCase().includes(clientNameLower));
+          if (assigneeAtRiskTasks.length > 0) {
+            // It's an assignee - show their at-risk tasks
+            responseData.tasks = assigneeAtRiskTasks;
+            responseData.overdueTasks = assigneeAtRiskTasks.filter(t => t.days_overdue && t.days_overdue > 0);
+            responseData.staleTasks = assigneeAtRiskTasks.filter(t => {
+              const daysSinceUpdate = Math.floor((new Date().getTime() - new Date(t.updated_at).getTime()) / (1000 * 60 * 60 * 24));
+              return daysSinceUpdate >= 7 && (!t.days_overdue || t.days_overdue <= 0);
+            });
+            responseData.awaitingFeedbackTasks = assigneeAtRiskTasks.filter(t =>
+              t.status === 'awaiting_feedback_internal' || t.status === 'awaiting_feedback_external'
+            );
+          } else {
+            // It's a client - show their client-level risk review
+            logger.addDataSource('hubspot');
+            const company = await hubspot.getCompanyLastContacted(query.clientName);
+            responseData.lastContacted = company.lastContacted || undefined;
+            responseData.unrepliedEmails = company.unrepliedEmails || [];
+            responseData.meetings = company.meetings || [];
 
-          responseData.tasks = clientTasks;
-          responseData.overdueTasks = overdueTasks;
-          responseData.staleTasks = staleTasks;
-          responseData.awaitingFeedbackTasks = awaitingFeedbackTasks;
+            const clientTasks = await donezy.getTasksByClientName(query.clientName);
+
+            // Filter at-risk tasks to only include those for this client
+            const allOverdueTasks = await donezy.getOverdueTasks();
+            const allStaleTasks = await donezy.getTasksNotUpdatedInDays(7);
+            const allAwaitingFeedbackTasks = await donezy.getStaleAwaitingFeedbackTasks();
+
+            const clientNameLower = query.clientName.toLowerCase();
+            const overdueTasks = allOverdueTasks.filter(t => t.project_name?.toLowerCase().includes(clientNameLower));
+            const staleTasks = allStaleTasks.filter(t => t.project_name?.toLowerCase().includes(clientNameLower));
+            const awaitingFeedbackTasks = allAwaitingFeedbackTasks.filter(t => t.project_name?.toLowerCase().includes(clientNameLower));
+
+            responseData.tasks = clientTasks;
+            responseData.overdueTasks = overdueTasks;
+            responseData.staleTasks = staleTasks;
+            responseData.awaitingFeedbackTasks = awaitingFeedbackTasks;
+          }
         }
         break;
       }

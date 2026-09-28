@@ -182,6 +182,16 @@ export class DonezyIntegration {
     return daysDiff > 0 ? daysDiff : undefined;
   }
 
+  async getAtRiskTasksForAssignee(assigneeName: string): Promise<DonezyTask[]> {
+    try {
+      const allRiskTasks = await this.getAllRiskTasksGroupedByAssignee();
+      return allRiskTasks[assigneeName] || [];
+    } catch (error) {
+      console.error(`Error fetching at-risk tasks for ${assigneeName}:`, error);
+      return [];
+    }
+  }
+
   async getAllRiskTasksGroupedByAssignee(): Promise<{ [assignee: string]: DonezyTask[] }> {
     try {
       const { data, error } = await this.supabase
