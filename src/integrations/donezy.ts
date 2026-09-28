@@ -185,7 +185,15 @@ export class DonezyIntegration {
   async getAtRiskTasksForAssignee(assigneeName: string): Promise<DonezyTask[]> {
     try {
       const allRiskTasks = await this.getAllRiskTasksGroupedByAssignee();
-      return allRiskTasks[assigneeName] || [];
+      const assigneeNames = Object.keys(allRiskTasks);
+      const assigneeTasks = allRiskTasks[assigneeName] || [];
+
+      console.log(`[Donezy] getAtRiskTasksForAssignee("${assigneeName}")`);
+      console.log(`  Available assignees: ${assigneeNames.join(', ')}`);
+      console.log(`  Exact match found: ${allRiskTasks[assigneeName] ? 'YES' : 'NO'}`);
+      console.log(`  Tasks returned: ${assigneeTasks.length}`);
+
+      return assigneeTasks;
     } catch (error) {
       console.error(`Error fetching at-risk tasks for ${assigneeName}:`, error);
       return [];
@@ -238,7 +246,11 @@ export class DonezyIntegration {
         grouped[task.assigned_to].push(task);
       });
 
-      console.log(`[Donezy] Found ${riskTasks.length} at-risk tasks for ${Object.keys(grouped).length} assignees`);
+      const assigneeTaskCounts = Object.entries(grouped).map(([name, tasks]) => `${name}: ${tasks.length}`);
+      console.log(`[Donezy] getAllRiskTasksGroupedByAssignee():`);
+      console.log(`  Total at-risk tasks: ${riskTasks.length}`);
+      console.log(`  Assignees: ${assigneeTaskCounts.join(', ')}`);
+
       return grouped;
     } catch (error) {
       console.error('Error fetching risk tasks grouped by assignee:', error);
