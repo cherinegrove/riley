@@ -78,8 +78,21 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
       } else if (query.type === 'risk_review' && query.clientName) {
         logger.addDataSource('donezy');
 
-        // Check if this is an assignee name first
-        const assigneeAtRiskTasks = await donezy.getAtRiskTasksForAssignee(query.clientName);
+        // Try to match by exact assignee name first
+        const allRiskByAssignee = await donezy.getAllRiskTasksGroupedByAssignee();
+        let assigneeAtRiskTasks = allRiskByAssignee[query.clientName] || [];
+
+        // If no exact match, try case-insensitive search
+        if (assigneeAtRiskTasks.length === 0) {
+          const queryLower = query.clientName.toLowerCase();
+          const matchingAssignee = Object.keys(allRiskByAssignee).find(
+            name => name.toLowerCase() === queryLower
+          );
+          if (matchingAssignee) {
+            assigneeAtRiskTasks = allRiskByAssignee[matchingAssignee];
+            logger.info(`Matched "${query.clientName}" to assignee "${matchingAssignee}"`);
+          }
+        }
 
         if (assigneeAtRiskTasks.length > 0) {
           // It's an assignee - show their at-risk tasks
