@@ -84,9 +84,16 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
 
         logger.addDataSource('donezy');
         const clientTasks = await donezy.getTasksByClientName(query.clientName);
-        const overdueTasks = await donezy.getOverdueTasks();
-        const staleTasks = await donezy.getTasksNotUpdatedInDays(7);
-        const awaitingFeedbackTasks = await donezy.getStaleAwaitingFeedbackTasks();
+
+        // Filter at-risk tasks to only include those for this client
+        const allOverdueTasks = await donezy.getOverdueTasks();
+        const allStaleTasks = await donezy.getTasksNotUpdatedInDays(7);
+        const allAwaitingFeedbackTasks = await donezy.getStaleAwaitingFeedbackTasks();
+
+        const clientNameLower = query.clientName.toLowerCase();
+        const overdueTasks = allOverdueTasks.filter(t => t.project_name?.toLowerCase().includes(clientNameLower));
+        const staleTasks = allStaleTasks.filter(t => t.project_name?.toLowerCase().includes(clientNameLower));
+        const awaitingFeedbackTasks = allAwaitingFeedbackTasks.filter(t => t.project_name?.toLowerCase().includes(clientNameLower));
 
         responseData.tasks = clientTasks;
         responseData.overdueTasks = overdueTasks;
@@ -244,9 +251,16 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
 
           logger.addDataSource('donezy');
           const clientTasks = await donezy.getTasksByClientName(query.clientName);
-          const overdueTasks = await donezy.getOverdueTasks();
-          const staleTasks = await donezy.getTasksNotUpdatedInDays(7);
-          const awaitingFeedbackTasks = await donezy.getStaleAwaitingFeedbackTasks();
+
+          // Filter at-risk tasks to only include those for this client
+          const allOverdueTasks = await donezy.getOverdueTasks();
+          const allStaleTasks = await donezy.getTasksNotUpdatedInDays(7);
+          const allAwaitingFeedbackTasks = await donezy.getStaleAwaitingFeedbackTasks();
+
+          const clientNameLower = query.clientName.toLowerCase();
+          const overdueTasks = allOverdueTasks.filter(t => t.project_name?.toLowerCase().includes(clientNameLower));
+          const staleTasks = allStaleTasks.filter(t => t.project_name?.toLowerCase().includes(clientNameLower));
+          const awaitingFeedbackTasks = allAwaitingFeedbackTasks.filter(t => t.project_name?.toLowerCase().includes(clientNameLower));
 
           responseData.tasks = clientTasks;
           responseData.overdueTasks = overdueTasks;
