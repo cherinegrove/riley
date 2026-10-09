@@ -1,6 +1,6 @@
 import * as cron from 'node-cron';
 import { DonezyIntegration } from '../integrations/donezy';
-import { DonezyTask } from '../utils/types';
+import { DonezyTask, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL } from '../utils/types';
 
 export class DailyDigest {
   private donezy: DonezyIntegration;
@@ -55,7 +55,7 @@ export class DailyDigest {
         return daysSinceUpdate >= 7;
       });
       const awaitingFeedback = tasks.filter((t) =>
-        t.status === 'awaiting_feedback_internal' || t.status === 'awaiting_feedback_external'
+        t.status === DONEZY_AWAITING_INTERNAL || t.status === DONEZY_AWAITING_EXTERNAL
       );
 
       // Format message
@@ -73,7 +73,7 @@ export class DailyDigest {
       if (awaitingFeedback.length > 0) {
         message += `⏰ *AWAITING FEEDBACK (${awaitingFeedback.length}):*\n`;
         awaitingFeedback.forEach((task) => {
-          const status = (task.status as string) === 'awaiting_feedback_internal' ? 'Internal' : 'External';
+          const status = (task.status as string) === DONEZY_AWAITING_INTERNAL ? 'Internal' : 'External';
           message += `  • ${task.title} - ${status} [${task.project_name}]\n`;
         });
         message += `\n`;

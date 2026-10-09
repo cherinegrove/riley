@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { DonezyTask } from '../utils/types';
+import { DonezyTask, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL, DONEZY_CLOSED_STATUSES } from '../utils/types';
 import { differenceInDays } from 'date-fns';
 
 export class DonezyIntegration {
@@ -44,7 +44,7 @@ export class DonezyIntegration {
       const { data, error } = await this.supabase
         .from('tasks_with_assignees')
         .select('*')
-        .neq('status', 'completed')
+        .not('status', 'in', `(${DONEZY_CLOSED_STATUSES.join(',')})`)
         .order('due_date', { ascending: true });
 
       if (error) throw error;
@@ -63,7 +63,7 @@ export class DonezyIntegration {
       const { data, error } = await this.supabase
         .from('tasks_with_assignees')
         .select('*')
-        .neq('status', 'completed')
+        .not('status', 'in', `(${DONEZY_CLOSED_STATUSES.join(',')})`)
         .order('priority', { ascending: false });
 
       if (error) throw error;
@@ -82,7 +82,7 @@ export class DonezyIntegration {
       const { data, error } = await this.supabase
         .from('tasks_with_assignees')
         .select('*')
-        .neq('status', 'completed')
+        .not('status', 'in', `(${DONEZY_CLOSED_STATUSES.join(',')})`)
         .order('due_date', { ascending: true });
 
       if (error) throw error;
@@ -102,7 +102,7 @@ export class DonezyIntegration {
       const { data, error } = await this.supabase
         .from('tasks_with_assignees')
         .select('*')
-        .in('status', ['awaiting_feedback_internal', 'awaiting_feedback_external'])
+        .in('status', [DONEZY_AWAITING_INTERNAL, DONEZY_AWAITING_EXTERNAL])
         .order('updated_at', { ascending: true });
 
       if (error) throw error;
@@ -113,8 +113,8 @@ export class DonezyIntegration {
       return tasks.filter((task) => {
         const hoursSinceUpdate = Math.floor((now.getTime() - new Date(task.updated_at).getTime()) / (1000 * 60 * 60));
 
-        if (task.status === 'awaiting_feedback_internal' && hoursSinceUpdate >= 24) return true;
-        if (task.status === 'awaiting_feedback_external' && hoursSinceUpdate >= 24) return true;
+        if (task.status === DONEZY_AWAITING_INTERNAL && hoursSinceUpdate >= 24) return true;
+        if (task.status === DONEZY_AWAITING_EXTERNAL && hoursSinceUpdate >= 24) return true;
 
         return false;
       });
@@ -130,7 +130,7 @@ export class DonezyIntegration {
       const { data, error } = await this.supabase
         .from('tasks_with_assignees')
         .select('*')
-        .neq('status', 'completed')
+        .not('status', 'in', `(${DONEZY_CLOSED_STATUSES.join(',')})`)
         .order('updated_at', { ascending: true });
 
       if (error) throw error;
@@ -165,7 +165,7 @@ export class DonezyIntegration {
   }
 
   private calculateDaysOverdue(dueDate: string | null | undefined, status: string): number | undefined {
-    if (!dueDate || status === 'completed') {
+    if (!dueDate || DONEZY_CLOSED_STATUSES.includes(status)) {
       return undefined;
     }
 
@@ -192,9 +192,7 @@ export class DonezyIntegration {
       const { data, error } = await this.supabase
         .from('tasks_with_assignees')
         .select('*')
-        .neq('status', 'completed')
-        .neq('status', 'done')
-        .neq('status', 'backlog')
+        .not('status', 'in', `(${DONEZY_CLOSED_STATUSES.join(',')})`)
         .order('assignee_name', { ascending: true });
 
       if (error) throw error;
@@ -202,19 +200,14 @@ export class DonezyIntegration {
       const now = new Date();
       const tasks = (data || []).map((row: any) => this.mapRowToTask(row));
 
-      const activeStatuses = ['todo', 'in_progress', 'awaiting_feedback_internal', 'awaiting_feedback_external', 'blocked'];
       const riskTasks = tasks.filter((task) => {
-        if (!activeStatuses.includes(task.status as string)) {
-          return false;
-        }
-
         if (task.days_overdue && task.days_overdue > 0) return true;
 
         const daysSinceUpdate = Math.floor((now.getTime() - new Date(task.updated_at).getTime()) / (1000 * 60 * 60 * 24));
         if (daysSinceUpdate >= 7) return true;
 
         const hoursSinceUpdate = Math.floor((now.getTime() - new Date(task.updated_at).getTime()) / (1000 * 60 * 60));
-        if ((task.status === 'awaiting_feedback_internal' || task.status === 'awaiting_feedback_external') && hoursSinceUpdate >= 24) return true;
+        if ((task.status === DONEZY_AWAITING_INTERNAL || task.status === DONEZY_AWAITING_EXTERNAL) && hoursSinceUpdate >= 24) return true;
 
         return false;
       });

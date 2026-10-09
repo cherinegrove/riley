@@ -1,4 +1,4 @@
-import { RileyQuery, DonezyTask, HubSpotDeal, HubSpotContact } from '../utils/types';
+import { RileyQuery, DonezyTask, HubSpotDeal, HubSpotContact, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL, DONEZY_CLOSED_STATUSES } from '../utils/types';
 
 const MAX_LISTED = 25;
 
@@ -181,8 +181,8 @@ export class RileyResponder {
     }
 
     if (data.awaitingFeedbackTasks && data.awaitingFeedbackTasks.length > 0) {
-      const internal = data.awaitingFeedbackTasks.filter((t) => (t.status as string) === 'awaiting_feedback_internal');
-      const external = data.awaitingFeedbackTasks.filter((t) => (t.status as string) === 'awaiting_feedback_external');
+      const internal = data.awaitingFeedbackTasks.filter((t) => (t.status as string) === DONEZY_AWAITING_INTERNAL);
+      const external = data.awaitingFeedbackTasks.filter((t) => (t.status as string) === DONEZY_AWAITING_EXTERNAL);
 
       if (internal.length > 0) {
         let text = `⏰ *AWAITING INTERNAL FEEDBACK (${internal.length}):*\n`;
@@ -290,8 +290,8 @@ export class RileyResponder {
 
     // 5. AWAITING FEEDBACK TASKS (with time in state)
     if (data.awaitingFeedbackTasks && data.awaitingFeedbackTasks.length > 0) {
-      const internal = data.awaitingFeedbackTasks.filter((t) => (t.status as string) === 'awaiting_feedback_internal');
-      const external = data.awaitingFeedbackTasks.filter((t) => (t.status as string) === 'awaiting_feedback_external');
+      const internal = data.awaitingFeedbackTasks.filter((t) => (t.status as string) === DONEZY_AWAITING_INTERNAL);
+      const external = data.awaitingFeedbackTasks.filter((t) => (t.status as string) === DONEZY_AWAITING_EXTERNAL);
 
       if (internal.length > 0) {
         response += `\n⏰ *AWAITING INTERNAL FEEDBACK 48+ HOURS (${internal.length}):*\n`;
@@ -345,7 +345,7 @@ export class RileyResponder {
       return response;
     }
 
-    const completed = projectTasks.filter((t) => t.status === 'completed').length;
+    const completed = projectTasks.filter((t) => t.status === 'done').length;
     const total = projectTasks.length;
     const progress = Math.round((completed / total) * 100);
 
@@ -375,7 +375,7 @@ export class RileyResponder {
   }
 
   private generateOverdueTasksResponse(data: ResponseData): string {
-    const overdueTasks = (data.tasks || []).filter((t) => t.days_overdue && t.days_overdue > 0 && t.status !== 'completed');
+    const overdueTasks = (data.tasks || []).filter((t) => t.days_overdue && t.days_overdue > 0 && !DONEZY_CLOSED_STATUSES.includes(t.status));
 
     if (overdueTasks.length === 0) {
       return `✅ No overdue tasks! Everything is on track.`;

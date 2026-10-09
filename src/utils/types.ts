@@ -52,12 +52,16 @@ export interface VribbleMeeting {
 }
 
 // Donezy types
+export const DONEZY_CLOSED_STATUSES = ['done', 'backlog'];
+export const DONEZY_AWAITING_INTERNAL = 'awaiting-feedback-(internal)';
+export const DONEZY_AWAITING_EXTERNAL = 'awaiting-ext';
+
 export interface DonezyTask {
   id: string;
   title: string;
   description?: string;
   project_name?: string;
-  status: 'todo' | 'in_progress' | 'completed' | 'blocked' | 'awaiting_feedback_internal' | 'awaiting_feedback_external' | 'done' | 'backlog';
+  status: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
   assigned_to: string;
   due_date?: string;

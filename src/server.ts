@@ -8,7 +8,7 @@ import { createResponder, ResponseData } from './riley/responder';
 import { createLogger } from './riley/logger';
 import { createDailyDigest } from './riley/daily-digest';
 import { createRileyStore } from './integrations/riley-store';
-import { GoogleChatMessage } from './utils/types';
+import { GoogleChatMessage, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL } from './utils/types';
 
 const app: Express = express();
 const config = getConfig();
@@ -105,7 +105,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
             return daysSinceUpdate >= 7 && (!t.days_overdue || t.days_overdue <= 0);
           });
           responseData.awaitingFeedbackTasks = assigneeAtRiskTasks.filter(t =>
-            t.status === 'awaiting_feedback_internal' || t.status === 'awaiting_feedback_external'
+            t.status === DONEZY_AWAITING_INTERNAL || t.status === DONEZY_AWAITING_EXTERNAL
           );
         } else {
           // It's a client - show their client-level risk review
@@ -291,7 +291,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
               return daysSinceUpdate >= 7 && (!t.days_overdue || t.days_overdue <= 0);
             });
             responseData.awaitingFeedbackTasks = assigneeAtRiskTasks.filter(t =>
-              t.status === 'awaiting_feedback_internal' || t.status === 'awaiting_feedback_external'
+              t.status === DONEZY_AWAITING_INTERNAL || t.status === DONEZY_AWAITING_EXTERNAL
             );
           } else {
             // It's a client - show their client-level risk review
@@ -450,8 +450,8 @@ app.post('/test/digest-detailed/:assignee', async (req: Request, res: Response):
 
     // Categorize by risk type
     const overdue = assigneeTasks.filter((t) => t.days_overdue && t.days_overdue > 0);
-    const awaitingFeedbackInternal = assigneeTasks.filter((t) => t.status === 'awaiting_feedback_internal');
-    const awaitingFeedbackExternal = assigneeTasks.filter((t) => t.status === 'awaiting_feedback_external');
+    const awaitingFeedbackInternal = assigneeTasks.filter((t) => t.status === DONEZY_AWAITING_INTERNAL);
+    const awaitingFeedbackExternal = assigneeTasks.filter((t) => t.status === DONEZY_AWAITING_EXTERNAL);
     const stale = assigneeTasks.filter((t) => {
       const daysSinceUpdate = Math.floor((now.getTime() - new Date(t.updated_at).getTime()) / (1000 * 60 * 60 * 24));
       return daysSinceUpdate >= 7 && !t.days_overdue;
@@ -542,7 +542,7 @@ app.post('/test/digest/:assignee', async (req: Request, res: Response): Promise<
       if (task.days_overdue && task.days_overdue > 0) return true;
 
       // Check if awaiting feedback 24+ hours
-      if (task.status === 'awaiting_feedback_internal' || task.status === 'awaiting_feedback_external') {
+      if (task.status === DONEZY_AWAITING_INTERNAL || task.status === DONEZY_AWAITING_EXTERNAL) {
         const hoursSinceUpdate = Math.floor((now.getTime() - new Date(task.updated_at).getTime()) / (1000 * 60 * 60));
         if (hoursSinceUpdate >= 24) return true;
       }
@@ -561,7 +561,7 @@ app.post('/test/digest/:assignee', async (req: Request, res: Response): Promise<
       return daysSinceUpdate >= 7;
     });
     const awaitingFeedback = atRiskTasks.filter(
-      (t) => t.status === 'awaiting_feedback_internal' || t.status === 'awaiting_feedback_external'
+      (t) => t.status === DONEZY_AWAITING_INTERNAL || t.status === DONEZY_AWAITING_EXTERNAL
     );
 
     res.status(200).json({
