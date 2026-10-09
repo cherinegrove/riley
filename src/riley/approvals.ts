@@ -4,18 +4,12 @@ import { PendingProposal, RileyStore } from '../integrations/riley-store';
 const APPROVER_EMAIL = 'cherine@cybersolve.net';
 const CREATOR_DONEZY_USER_ID = 'c5186049-990e-43c5-847a-c5bf0bc46220';
 
-export type ReplyCommand =
-  | { kind: 'decline' }
-  | { kind: 'client'; name: string }
-  | { kind: 'approve'; numbers: number[] | 'all' };
+export type ApproveCommand = { kind: 'decline' } | { kind: 'approve'; numbers: number[] | 'all' };
 
-export const parseReply = (text: string): ReplyCommand | null => {
+export const parseApproval = (text: string): ApproveCommand | null => {
   const cleaned = text.replace(/@riley\b/i, '').trim();
 
   if (/^no$/i.test(cleaned)) return { kind: 'decline' };
-
-  const clientMatch = cleaned.match(/^client\s+(.+)$/i);
-  if (clientMatch) return { kind: 'client', name: clientMatch[1].trim() };
 
   const match = cleaned.match(/^yes\b\s*(.*)$/i);
   if (!match) return null;
@@ -29,12 +23,18 @@ export const parseReply = (text: string): ReplyCommand | null => {
   return { kind: 'approve', numbers };
 };
 
+const CLIENT_LINE = /^\s*client\s+(.+)$/im;
+
 export class ApprovalService {
   constructor(private store: RileyStore, private donezy: DonezyIntegration) {}
 
   async handle(text: string, spaceName: string, threadName: string | undefined, senderEmail: string | undefined): Promise<string | null> {
-    const command = parseReply(text);
-    if (!command) return null;
+    const cleaned = text.replace(/@riley\b/i, '').trim();
+    const clientLine = cleaned.match(CLIENT_LINE);
+    const remainder = clientLine ? cleaned.replace(clientLine[0], '').trim() : cleaned;
+    const command = parseApproval(remainder);
+
+    if (!clientLine && !command) return null;
 
     const proposal = await this.store.findPendingProposal(spaceName, threadName);
     if (!proposal) return null;
@@ -48,18 +48,27 @@ export class ApprovalService {
       return `This proposal for "${proposal.title}" has expired. Ask me to re-run the meeting check to get a new one.`;
     }
 
+    let clientKey = proposal.client_key;
+    let filedMessage: string | null = null;
+
+    if (clientLine) {
+      const name = clientLine[1].trim();
+      const project = await this.donezy.findOpenProjectForClient(name);
+      if ('error' in project) {
+        return `I can't file this under "${name}": ${project.error}.`;
+      }
+      await this.store.setProposalClient(proposal.id, name);
+      clientKey = name;
+      filedMessage = `Filed under ${name} (open project: ${project.name}).`;
+    }
+
+    if (!command) {
+      return `${filedMessage} Now reply with the numbers to create, e.g. \`yes 1,3\`.`;
+    }
+
     if (command.kind === 'decline') {
       await this.store.updateProposalStatus(proposal.id, 'declined');
       return `Skipped the remaining action items from "${proposal.title}".`;
-    }
-
-    if (command.kind === 'client') {
-      const project = await this.donezy.findOpenProjectForClient(command.name);
-      if ('error' in project) {
-        return `I can't file this under "${command.name}": ${project.error}.`;
-      }
-      await this.store.setProposalClient(proposal.id, command.name);
-      return `Filed under ${command.name} (open project: ${project.name}). Now reply with the numbers to create, e.g. \`yes 1,3\`.`;
     }
 
     if (command.numbers !== 'all' && command.numbers.length === 0) {
@@ -84,17 +93,18 @@ export class ApprovalService {
       return `Item${alreadyCreated.length === 1 ? '' : 's'} ${alreadyCreated.join(', ')} ${alreadyCreated.length === 1 ? 'is' : 'are'} already in Donezy.`;
     }
 
-    const clientKey = proposal.client_key ?? (await this.store.clientKeyForSpace(spaceName));
-    if (!clientKey) {
+    const resolvedClient = clientKey ?? (await this.store.clientKeyForSpace(spaceName));
+    if (!resolvedClient) {
       return "I can't create these tasks yet: reply `client <name>` in this thread first.";
     }
 
-    const project = await this.donezy.findOpenProjectForClient(clientKey);
+    const project = await this.donezy.findOpenProjectForClient(resolvedClient);
     if ('error' in project) {
       return `I can't create these tasks yet: ${project.error}.`;
     }
 
-    return this.createTasks(proposal, chosen, project.id);
+    const result = await this.createTasks(proposal, chosen, project.id);
+    return filedMessage ? `${filedMessage}\n\n${result}` : result;
   }
 
   private async createTasks(
