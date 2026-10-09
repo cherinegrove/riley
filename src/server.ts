@@ -156,7 +156,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
     // Google Chat sends events in a different format
     if (!eventPayload.chat || !eventPayload.chat.messagePayload) {
       logger.info('Not a chat message event');
-      res.status(200).json({ status: 'ok' });
+      res.status(200).json({});
       return;
     }
 
@@ -175,7 +175,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
 
     if (!parsed || !parsed.text) {
       logger.info('No parsed text found');
-      res.status(200).json({ status: 'ok' });
+      res.status(200).json({});
       return;
     }
 
@@ -185,7 +185,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
 
     if (!isMentioned) {
       logger.info('Riley not mentioned');
-      res.status(200).json({ status: 'ok' });
+      res.status(200).json({});
       return;
     }
 
@@ -201,7 +201,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
         text: approvalReply,
         ...(replyThread && { thread: { name: replyThread } }),
       });
-      res.status(200).json({ status: 'ok' });
+      res.status(200).json({});
       return;
     }
 
@@ -369,7 +369,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
     }
 
     // Return success to Google Chat
-    res.status(200).json({ status: 'ok' });
+    res.status(200).json({});
   } catch (error) {
     logger.error('Error processing webhook', { error: String(error), stack: error instanceof Error ? error.stack : 'N/A' });
     res.status(500).json({ error: 'Internal server error' });
