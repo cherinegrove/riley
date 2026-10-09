@@ -8,6 +8,7 @@ import { createResponder, ResponseData } from './riley/responder';
 import { createLogger } from './riley/logger';
 import { createDailyDigest } from './riley/daily-digest';
 import { createRileyStore } from './integrations/riley-store';
+import { MeetingTrigger } from './riley/meeting-trigger';
 import { GoogleChatMessage, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL } from './utils/types';
 
 const app: Express = express();
@@ -30,6 +31,8 @@ const donezy = createDonezyIntegration(config.donezy.url, config.donezy.key);
 const hubspot = createHubSpotIntegration(config.hubspot.apiKey);
 const googleChat = createGoogleChatIntegration();
 const rileyStore = createRileyStore();
+const meetingTrigger = new MeetingTrigger(config.vribble.url, config.vribble.key, rileyStore);
+meetingTrigger.start(5 * 60 * 1000);
 
 // Initialize utilities
 const parser = createParser();
@@ -358,6 +361,11 @@ app.post('/webhook/google-chat', handleGoogleChatWebhook);
 /**
  * Health check endpoint
  */
+app.post('/test/meeting-trigger', async (_req: Request, res: Response): Promise<void> => {
+  const candidates = await meetingTrigger.scan(new Date(), false);
+  res.status(200).json({ count: candidates.length, candidates });
+});
+
 app.get('/health', (_req: Request, res: Response) => {
   res.status(200).json({
     status: 'healthy',
