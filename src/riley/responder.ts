@@ -1,5 +1,7 @@
 import { RileyQuery, DonezyTask, HubSpotDeal, HubSpotContact } from '../utils/types';
 
+const MAX_LISTED = 25;
+
 export interface ResponseData {
   meetings?: Array<{ id: string; title: string; date: string; summary: string; actionItems: string[] }>;
   tasks?: DonezyTask[];
@@ -177,24 +179,24 @@ export class RileyResponder {
     // 3. OVERDUE TASKS (with days overdue)
     if (data.overdueTasks && data.overdueTasks.length > 0) {
       response += `\n🚨 *OVERDUE TASKS (${data.overdueTasks.length}):*\n`;
-      data.overdueTasks.slice(0, 5).forEach((task) => {
+      data.overdueTasks.slice(0, MAX_LISTED).forEach((task) => {
         const daysOverdue = task.days_overdue || 0;
         response += `  • ${task.title} - ${daysOverdue} days overdue [${task.assigned_to}]\n`;
       });
-      if (data.overdueTasks.length > 5) {
-        response += `  ...and ${data.overdueTasks.length - 5} more\n`;
+      if (data.overdueTasks.length > MAX_LISTED) {
+        response += `  ...and ${data.overdueTasks.length - MAX_LISTED} more\n`;
       }
     }
 
     // 4. TASKS NOT UPDATED (with days since update)
     if (data.staleTasks && data.staleTasks.length > 0) {
       response += `\n⏳ *TASKS NOT UPDATED 7+ DAYS (${data.staleTasks.length}):*\n`;
-      data.staleTasks.slice(0, 5).forEach((task) => {
+      data.staleTasks.slice(0, MAX_LISTED).forEach((task) => {
         const daysSinceUpdate = Math.floor((now.getTime() - new Date(task.updated_at).getTime()) / (1000 * 60 * 60 * 24));
         response += `  • ${task.title} - not updated ${daysSinceUpdate} days [${task.assigned_to}]\n`;
       });
-      if (data.staleTasks.length > 5) {
-        response += `  ...and ${data.staleTasks.length - 5} more\n`;
+      if (data.staleTasks.length > MAX_LISTED) {
+        response += `  ...and ${data.staleTasks.length - MAX_LISTED} more\n`;
       }
     }
 
@@ -205,7 +207,7 @@ export class RileyResponder {
 
       if (internal.length > 0) {
         response += `\n⏰ *AWAITING INTERNAL FEEDBACK 48+ HOURS (${internal.length}):*\n`;
-        internal.slice(0, 3).forEach((task) => {
+        internal.slice(0, MAX_LISTED).forEach((task) => {
           const hoursSince = Math.floor((now.getTime() - new Date(task.updated_at).getTime()) / (1000 * 60 * 60));
           response += `  • ${task.title} - waiting ${hoursSince}h [${task.assigned_to}]\n`;
         });
@@ -213,7 +215,7 @@ export class RileyResponder {
 
       if (external.length > 0) {
         response += `\n⏰ *AWAITING EXTERNAL FEEDBACK 7+ DAYS (${external.length}):*\n`;
-        external.slice(0, 3).forEach((task) => {
+        external.slice(0, MAX_LISTED).forEach((task) => {
           const daysSince = Math.floor((now.getTime() - new Date(task.updated_at).getTime()) / (1000 * 60 * 60 * 24));
           response += `  • ${task.title} - waiting ${daysSince} days [${task.assigned_to}]\n`;
         });
