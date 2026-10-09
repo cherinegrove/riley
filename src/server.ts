@@ -407,7 +407,14 @@ app.post('/test/project-review/:projectId', async (req: Request, res: Response):
     res.status(404).json({ error: 'no open project with that id' });
     return;
   }
-  res.status(200).json({ project: project.name, messages: await projectReview.messagesFor(project.id, project.name) });
+  const messages = await projectReview.messagesFor(project.id, project.name);
+  if (req.query.post === 'true') {
+    const target = process.env.PROPOSAL_FALLBACK_SPACE || process.env.GOOGLE_CHAT_SPACE_ID || '';
+    for (const text of messages) {
+      await googleChat.postMessage(target, text);
+    }
+  }
+  res.status(200).json({ project: project.name, messages });
 });
 
 app.post('/test/meeting-proposal', async (_req: Request, res: Response): Promise<void> => {
