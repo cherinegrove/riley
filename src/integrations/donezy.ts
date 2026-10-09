@@ -184,7 +184,20 @@ export class DonezyIntegration {
     if (clientError) return { error: clientError.message };
 
     const client = ((clients || []) as any[])[0];
-    if (!client) return { error: `there is no Donezy client called "${clientName}"` };
+    if (!client) {
+      const { data: named, error: namedError } = await this.supabase
+        .from('projects')
+        .select('id, name')
+        .ilike('name', clientName.trim())
+        .eq('status', 'in-progress');
+      if (namedError) return { error: namedError.message };
+      const matches = (named || []) as any[];
+      if (matches.length === 1) return { id: matches[0].id, name: matches[0].name };
+      if (matches.length > 1) {
+        return { error: `${matches.length} open projects are called "${clientName}", so I can't tell which one to use` };
+      }
+      return { error: `there is no Donezy client or open project called "${clientName}"` };
+    }
 
     const { data: projects, error: projectError } = await this.supabase
       .from('projects')
