@@ -44,7 +44,7 @@ export class ApprovalService {
 
     if (command.kind === 'decline') {
       await this.store.updateProposalStatus(proposal.id, 'declined');
-      return `Skipped the action items from "${proposal.title}".`;
+      return `Skipped the remaining action items from "${proposal.title}".`;
     }
 
     if (command.numbers !== 'all' && command.numbers.length === 0) {
@@ -59,9 +59,15 @@ export class ApprovalService {
       }
     }
 
-    const chosen = command.numbers === 'all'
-      ? proposal.items
-      : proposal.items.filter((item) => (command.numbers as number[]).includes(item.number));
+    const requested = command.numbers === 'all' ? validNumbers : command.numbers;
+    const alreadyCreated = requested.filter((n) => proposal.created_numbers.includes(n));
+    const chosen = proposal.items.filter(
+      (item) => requested.includes(item.number) && !proposal.created_numbers.includes(item.number)
+    );
+
+    if (chosen.length === 0) {
+      return `Item${alreadyCreated.length === 1 ? '' : 's'} ${alreadyCreated.join(', ')} ${alreadyCreated.length === 1 ? 'is' : 'are'} already in Donezy.`;
+    }
 
     const clientKey = await this.store.clientKeyForSpace(spaceName);
     if (!clientKey) {
@@ -82,6 +88,7 @@ export class ApprovalService {
     projectId: string
   ): Promise<string> {
     const created: string[] = [];
+    const createdNumbers: number[] = [];
     const failed: string[] = [];
 
     for (const item of items) {
@@ -95,12 +102,15 @@ export class ApprovalService {
           assignee_id: assigneeId,
         });
         created.push(item.title);
+        createdNumbers.push(item.number);
       } catch (error) {
         failed.push(`${item.title} (${error instanceof Error ? error.message : String(error)})`);
       }
     }
 
-    await this.store.updateProposalStatus(proposal.id, failed.length === 0 ? 'approved' : 'partially_approved');
+    const allCreated = [...proposal.created_numbers, ...createdNumbers];
+    const allItemsDone = proposal.items.every((item) => allCreated.includes(item.number));
+    await this.store.recordCreatedItems(proposal.id, allCreated, allItemsDone ? 'completed' : 'pending');
 
     const lines: string[] = [];
     if (created.length > 0) lines.push(`Created ${created.length} task(s) in Donezy:\n${created.map((t) => `• ${t}`).join('\n')}`);

@@ -24,6 +24,7 @@ export interface PendingProposal {
   items: Array<{ number: number; title: string; task: string; assignee: string | null; existing_task: string | null }>;
   status: string;
   expires_at: string;
+  created_numbers: number[];
 }
 
 export class RileyStore {
@@ -114,6 +115,17 @@ export class RileyStore {
       return null;
     }
     return data && data.length > 0 ? data[0] : null;
+  }
+
+  async recordCreatedItems(id: string, createdNumbers: number[], status: string): Promise<void> {
+    if (!this.supabase) return;
+    const { error } = await this.supabase
+      .from('meeting_proposals')
+      .update({ created_numbers: createdNumbers, status })
+      .eq('id', id);
+    if (error) {
+      console.error('[RileyStore] Failed to record created items:', error.message);
+    }
   }
 
   async updateProposalStatus(id: string, status: string): Promise<void> {
