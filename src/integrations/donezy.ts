@@ -4,22 +4,34 @@ import { differenceInDays } from 'date-fns';
 
 export class DonezyIntegration {
   private supabase: ReturnType<typeof createClient>;
+  private projectNames = new Map<string, string>();
 
   constructor(url: string, key: string) {
     this.supabase = createClient(url, key);
   }
 
+  private async loadProjectNames(): Promise<void> {
+    const { data, error } = await this.supabase.from('projects').select('id, name');
+    if (error) {
+      console.error('[Donezy] Failed to load project names:', error.message);
+      return;
+    }
+    this.projectNames = new Map((data || []).map((p: any) => [p.id, p.name]));
+  }
+
   async getTasksByProjectName(projectName: string): Promise<DonezyTask[]> {
     try {
+      await this.loadProjectNames();
       const { data, error } = await this.supabase
         .from('tasks_with_assignees')
         .select('*')
-        .ilike('project_name', `%${projectName}%`)
         .order('due_date', { ascending: true });
 
       if (error) throw error;
 
-      return data?.map((row: any) => this.mapRowToTask(row)) || [];
+      return (data || [])
+        .map((row: any) => this.mapRowToTask(row))
+        .filter((task) => (task.project_name || "").toLowerCase().includes(projectName.toLowerCase()));
     } catch (error) {
       console.error('Error fetching Donezy tasks:', error);
       return [];
@@ -28,6 +40,7 @@ export class DonezyIntegration {
 
   async getOverdueTasks(): Promise<DonezyTask[]> {
     try {
+      await this.loadProjectNames();
       const { data, error } = await this.supabase
         .from('tasks_with_assignees')
         .select('*')
@@ -36,12 +49,7 @@ export class DonezyIntegration {
 
       if (error) throw error;
 
-      const tasks =
-        data?.map((row: any) => ({
-          ...this.mapRowToTask(row),
-        })) || [];
-
-      // Filter to only overdue tasks
+      const tasks = (data || []).map((row: any) => this.mapRowToTask(row));
       return tasks.filter((task) => task.days_overdue && task.days_overdue > 0);
     } catch (error) {
       console.error('Error fetching overdue tasks:', error);
@@ -51,6 +59,7 @@ export class DonezyIntegration {
 
   async getAllTasks(): Promise<DonezyTask[]> {
     try {
+      await this.loadProjectNames();
       const { data, error } = await this.supabase
         .from('tasks_with_assignees')
         .select('*')
@@ -59,7 +68,7 @@ export class DonezyIntegration {
 
       if (error) throw error;
 
-      return data?.map((row: any) => this.mapRowToTask(row)) || [];
+      return (data || []).map((row: any) => this.mapRowToTask(row));
     } catch (error) {
       console.error('Error fetching all tasks:', error);
       return [];
@@ -68,6 +77,7 @@ export class DonezyIntegration {
 
   async getTasksByClientName(clientName: string): Promise<DonezyTask[]> {
     try {
+      await this.loadProjectNames();
       const normalized = clientName.toLowerCase().trim();
       const { data, error } = await this.supabase
         .from('tasks_with_assignees')
@@ -77,25 +87,9 @@ export class DonezyIntegration {
 
       if (error) throw error;
 
-      // Filter by client name (case-insensitive)
-      const filtered = data?.filter((row: any) => {
-        const projectName = (row.project_name || '').toLowerCase();
-        return projectName.includes(normalized);
-      }) || [];
-
-      return filtered.map((row: any) => ({
-        id: row.id,
-        title: row.title,
-        description: row.description,
-        project_name: row.project_name,
-        status: row.status,
-        priority: row.priority,
-        assigned_to: row.assigned_to,
-        due_date: row.due_date,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        days_overdue: this.calculateDaysOverdue(row.due_date, row.status),
-      }));
+      return (data || [])
+        .map((row: any) => this.mapRowToTask(row))
+        .filter((task) => (task.project_name || "").toLowerCase().includes(normalized));
     } catch (error) {
       console.error('Error fetching tasks by client:', error);
       return [];
@@ -104,6 +98,7 @@ export class DonezyIntegration {
 
   async getStaleAwaitingFeedbackTasks(): Promise<DonezyTask[]> {
     try {
+      await this.loadProjectNames();
       const { data, error } = await this.supabase
         .from('tasks_with_assignees')
         .select('*')
@@ -113,9 +108,8 @@ export class DonezyIntegration {
       if (error) throw error;
 
       const now = new Date();
-      const tasks = data?.map((row: any) => this.mapRowToTask(row)) || [];
+      const tasks = (data || []).map((row: any) => this.mapRowToTask(row));
 
-      // Filter: Both internal and external 24+ hours
       return tasks.filter((task) => {
         const hoursSinceUpdate = Math.floor((now.getTime() - new Date(task.updated_at).getTime()) / (1000 * 60 * 60));
 
@@ -132,6 +126,7 @@ export class DonezyIntegration {
 
   async getTasksNotUpdatedInDays(days: number = 7): Promise<DonezyTask[]> {
     try {
+      await this.loadProjectNames();
       const { data, error } = await this.supabase
         .from('tasks_with_assignees')
         .select('*')
@@ -141,9 +136,8 @@ export class DonezyIntegration {
       if (error) throw error;
 
       const now = new Date();
-      const tasks = data?.map((row: any) => this.mapRowToTask(row)) || [];
+      const tasks = (data || []).map((row: any) => this.mapRowToTask(row));
 
-      // Filter: not updated in X days
       return tasks.filter((task) => {
         const daysSinceUpdate = Math.floor((now.getTime() - new Date(task.updated_at).getTime()) / (1000 * 60 * 60 * 24));
         return daysSinceUpdate >= days;
@@ -159,7 +153,7 @@ export class DonezyIntegration {
       id: row.id,
       title: row.title,
       description: row.description,
-      project_name: row.project_name || `Project ${row.project_id}`,
+      project_name: row.project_name || this.projectNames.get(row.project_id) || `Project ${row.project_id}`,
       status: row.status,
       priority: row.priority,
       assigned_to: row.assignee_name || row.assigned_to || 'Unassigned',
@@ -185,15 +179,7 @@ export class DonezyIntegration {
   async getAtRiskTasksForAssignee(assigneeName: string): Promise<DonezyTask[]> {
     try {
       const allRiskTasks = await this.getAllRiskTasksGroupedByAssignee();
-      const assigneeNames = Object.keys(allRiskTasks);
-      const assigneeTasks = allRiskTasks[assigneeName] || [];
-
-      console.log(`[Donezy] getAtRiskTasksForAssignee("${assigneeName}")`);
-      console.log(`  Available assignees: ${assigneeNames.join(', ')}`);
-      console.log(`  Exact match found: ${allRiskTasks[assigneeName] ? 'YES' : 'NO'}`);
-      console.log(`  Tasks returned: ${assigneeTasks.length}`);
-
-      return assigneeTasks;
+      return allRiskTasks[assigneeName] || [];
     } catch (error) {
       console.error(`Error fetching at-risk tasks for ${assigneeName}:`, error);
       return [];
@@ -202,6 +188,7 @@ export class DonezyIntegration {
 
   async getAllRiskTasksGroupedByAssignee(): Promise<{ [assignee: string]: DonezyTask[] }> {
     try {
+      await this.loadProjectNames();
       const { data, error } = await this.supabase
         .from('tasks_with_assignees')
         .select('*')
@@ -213,31 +200,25 @@ export class DonezyIntegration {
       if (error) throw error;
 
       const now = new Date();
-      const tasks = data?.map((row: any) => this.mapRowToTask(row)) || [];
+      const tasks = (data || []).map((row: any) => this.mapRowToTask(row));
 
-      // Filter for risk items - only active tasks (not completed/done)
+      const activeStatuses = ['todo', 'in_progress', 'awaiting_feedback_internal', 'awaiting_feedback_external', 'blocked'];
       const riskTasks = tasks.filter((task) => {
-        // Only include tasks in active states
-        const activeStatuses = ['todo', 'in_progress', 'awaiting_feedback_internal', 'awaiting_feedback_external', 'blocked'];
         if (!activeStatuses.includes(task.status as string)) {
           return false;
         }
 
-        // Check if overdue
         if (task.days_overdue && task.days_overdue > 0) return true;
 
-        // Check if not updated in 7 days
         const daysSinceUpdate = Math.floor((now.getTime() - new Date(task.updated_at).getTime()) / (1000 * 60 * 60 * 24));
         if (daysSinceUpdate >= 7) return true;
 
-        // Check if awaiting feedback 24+ hours
         const hoursSinceUpdate = Math.floor((now.getTime() - new Date(task.updated_at).getTime()) / (1000 * 60 * 60));
         if ((task.status === 'awaiting_feedback_internal' || task.status === 'awaiting_feedback_external') && hoursSinceUpdate >= 24) return true;
 
         return false;
       });
 
-      // Group by assignee
       const grouped: { [assignee: string]: DonezyTask[] } = {};
       riskTasks.forEach((task) => {
         if (!grouped[task.assigned_to]) {
@@ -245,11 +226,6 @@ export class DonezyIntegration {
         }
         grouped[task.assigned_to].push(task);
       });
-
-      const assigneeTaskCounts = Object.entries(grouped).map(([name, tasks]) => `${name}: ${tasks.length}`);
-      console.log(`[Donezy] getAllRiskTasksGroupedByAssignee():`);
-      console.log(`  Total at-risk tasks: ${riskTasks.length}`);
-      console.log(`  Assignees: ${assigneeTaskCounts.join(', ')}`);
 
       return grouped;
     } catch (error) {
