@@ -176,6 +176,50 @@ export class DonezyIntegration {
     return daysDiff > 0 ? daysDiff : undefined;
   }
 
+  async getAssigneeIdByName(name: string): Promise<string | null> {
+    const { data, error } = await this.supabase
+      .from('tasks_with_assignees')
+      .select('assignee_id, assignee_name')
+      .not('assignee_name', 'is', null);
+
+    if (error) {
+      console.error('[Donezy] Failed to look up assignee:', error.message);
+      return null;
+    }
+
+    const wanted = name.trim().toLowerCase();
+    const match = ((data || []) as any[]).find((row) => row.assignee_name?.trim().toLowerCase() === wanted);
+    return match?.assignee_id ?? null;
+  }
+
+  async createTask(input: {
+    title: string;
+    description: string;
+    project_id: string;
+    creator_id: string;
+    assignee_id: string | null;
+  }): Promise<{ id: string } | null> {
+    const { data, error } = await this.supabase
+      .from('tasks')
+      .insert({
+        title: input.title,
+        description: input.description,
+        project_id: input.project_id,
+        auth_user_id: input.creator_id,
+        assignee_id: input.assignee_id,
+        status: 'todo',
+        priority: 'medium',
+      } as any)
+      .select('id')
+      .single();
+
+    if (error) {
+      console.error('[Donezy] Failed to create task:', error.message);
+      throw new Error(error.message);
+    }
+    return data;
+  }
+
   async getAtRiskTasksForAssignee(assigneeName: string): Promise<DonezyTask[]> {
     try {
       const allRiskTasks = await this.getAllRiskTasksGroupedByAssignee();

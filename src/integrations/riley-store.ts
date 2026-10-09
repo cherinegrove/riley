@@ -15,6 +15,17 @@ export interface ProcessedMeeting {
   status: string;
 }
 
+export interface PendingProposal {
+  id: string;
+  vribble_meeting_id: string;
+  title: string;
+  space_name: string;
+  thread_name: string | null;
+  items: Array<{ number: number; title: string; task: string; assignee: string | null; existing_task: string | null }>;
+  status: string;
+  expires_at: string;
+}
+
 export class RileyStore {
   private supabase: SupabaseClient | null;
 
@@ -75,6 +86,58 @@ export class RileyStore {
     if (error) {
       console.error('[RileyStore] Failed to save proposal:', error.message);
     }
+  }
+
+  async findPendingProposal(spaceName: string, threadName: string | undefined): Promise<PendingProposal | null> {
+    if (!this.supabase) return null;
+
+    if (threadName) {
+      const { data } = await this.supabase
+        .from('meeting_proposals')
+        .select('*')
+        .eq('space_name', spaceName)
+        .eq('thread_name', threadName)
+        .eq('status', 'pending')
+        .limit(1);
+      if (data && data.length > 0) return data[0];
+    }
+
+    const { data, error } = await this.supabase
+      .from('meeting_proposals')
+      .select('*')
+      .eq('space_name', spaceName)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (error) {
+      console.error('[RileyStore] Failed to find proposal:', error.message);
+      return null;
+    }
+    return data && data.length > 0 ? data[0] : null;
+  }
+
+  async updateProposalStatus(id: string, status: string): Promise<void> {
+    if (!this.supabase) return;
+    const { error } = await this.supabase.from('meeting_proposals').update({ status }).eq('id', id);
+    if (error) {
+      console.error('[RileyStore] Failed to update proposal:', error.message);
+    }
+  }
+
+  async clientKeyForSpace(spaceName: string): Promise<string | null> {
+    if (!this.supabase) return null;
+    const { data } = await this.supabase.from('chat_spaces').select('client_key').eq('space_name', spaceName).limit(1);
+    return data && data.length > 0 ? data[0].client_key : null;
+  }
+
+  async donezyProjectForClient(clientKey: string): Promise<string | null> {
+    if (!this.supabase) return null;
+    const { data } = await this.supabase
+      .from('client_projects')
+      .select('donezy_project_id')
+      .eq('client_key', clientKey)
+      .limit(1);
+    return data && data.length > 0 ? data[0].donezy_project_id : null;
   }
 
   async recordMeeting(meeting: ProcessedMeeting): Promise<void> {

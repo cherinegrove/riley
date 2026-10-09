@@ -10,6 +10,7 @@ import { createDailyDigest } from './riley/daily-digest';
 import { createRileyStore } from './integrations/riley-store';
 import { MeetingCandidate, MeetingTrigger } from './riley/meeting-trigger';
 import { ProposalService } from './riley/proposals';
+import { ApprovalService } from './riley/approvals';
 import { GoogleChatMessage, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL } from './utils/types';
 
 const app: Express = express();
@@ -33,6 +34,7 @@ const hubspot = createHubSpotIntegration(config.hubspot.apiKey);
 const googleChat = createGoogleChatIntegration();
 const rileyStore = createRileyStore();
 const proposals = new ProposalService(rileyStore, googleChat, donezy);
+const approvals = new ApprovalService(rileyStore, donezy);
 const meetingTrigger = new MeetingTrigger(config.vribble.url, config.vribble.key, rileyStore, (candidate: MeetingCandidate) =>
   proposals.propose(candidate)
 );
@@ -183,6 +185,22 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
 
     if (!isMentioned) {
       logger.info('Riley not mentioned');
+      res.status(200).json({ status: 'ok' });
+      return;
+    }
+
+    const approvalReply = await approvals.handle(
+      parsed.text,
+      payload.message?.space?.name || '',
+      payload.message?.thread?.name,
+      parsed.userEmail
+    );
+    if (approvalReply) {
+      const replyThread = payload.message?.thread?.name;
+      await googleChat.sendMessage(payload.message?.space?.name || '', {
+        text: approvalReply,
+        ...(replyThread && { thread: { name: replyThread } }),
+      });
       res.status(200).json({ status: 'ok' });
       return;
     }
