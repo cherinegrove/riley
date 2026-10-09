@@ -7,6 +7,7 @@ import { createParser } from './riley/parser';
 import { createResponder, ResponseData } from './riley/responder';
 import { createLogger } from './riley/logger';
 import { createDailyDigest } from './riley/daily-digest';
+import { createRileyStore } from './integrations/riley-store';
 import { GoogleChatMessage } from './utils/types';
 
 const app: Express = express();
@@ -28,6 +29,7 @@ app.use(express.static('public'));
 const donezy = createDonezyIntegration(config.donezy.url, config.donezy.key);
 const hubspot = createHubSpotIntegration(config.hubspot.apiKey);
 const googleChat = createGoogleChatIntegration();
+const rileyStore = createRileyStore();
 
 // Initialize utilities
 const parser = createParser();
@@ -192,6 +194,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
     const responseData: ResponseData = {};
     let spaceName = payload.message?.space?.name || '';
     let threadName = payload.message?.thread?.name;
+    await rileyStore.recordSpace(spaceName, payload.message?.space?.displayName);
 
     switch (query.type) {
       case 'client_status': {
