@@ -213,8 +213,17 @@ export class DonezyIntegration {
     }
 
     const wanted = name.trim().toLowerCase();
-    const match = ((data || []) as any[]).find((row) => row.assignee_name?.trim().toLowerCase() === wanted);
-    return match?.assignee_id ?? null;
+    const people = ((data || []) as any[])
+      .filter((row) => row.assignee_name)
+      .map((row) => ({ id: row.assignee_id as string, name: (row.assignee_name as string).trim() }));
+
+    const exact = people.find((p) => p.name.toLowerCase() === wanted);
+    if (exact) return exact.id;
+
+    const byFirstName = [...new Map(people.map((p) => [p.name, p])).values()].filter(
+      (p) => p.name.toLowerCase().split(' ')[0] === wanted
+    );
+    return byFirstName.length === 1 ? byFirstName[0].id : null;
   }
 
   async createTask(input: {
