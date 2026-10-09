@@ -139,7 +139,7 @@ export class MeetingTrigger {
           space_name: candidate.space_name,
           status: candidate.status,
         });
-        if (candidate.status === 'detected' && this.onDetected) {
+        if (candidate.status !== 'duplicate' && this.onDetected) {
           await this.onDetected(candidate);
         }
       }

@@ -27,7 +27,7 @@ export const findExistingTask = (title: string, openTasks: DonezyTask[]): Donezy
   );
 };
 
-export const buildProposalText = (meetingTitle: string, items: ProposalItem[]): string => {
+export const buildProposalText = (meetingTitle: string, items: ProposalItem[], clientMatched: boolean): string => {
   const lines = items.map((item) => {
     const detail = item.task && item.task !== item.title ? ` - ${item.task}` : '';
     const assignee = item.assignee ? ` [${item.assignee}]` : '';
@@ -35,12 +35,11 @@ export const buildProposalText = (meetingTitle: string, items: ProposalItem[]): 
     return `${item.number}. *${item.title}*${detail}${assignee}${status}`;
   });
 
-  return [
-    `Here are the action items from "${meetingTitle}".`,
-    `Items marked (new) are not in Donezy yet. Please reply in this thread with the numbers to create, e.g. \`yes 1,3\`. Expires in ${EXPIRY_HOURS} hours.`,
-    '',
-    ...lines,
-  ].join('\n');
+  const intro = clientMatched
+    ? `Here are the action items from "${meetingTitle}".\nItems marked (new) are not in Donezy yet. Please reply in this thread with the numbers to create, e.g. \`yes 1,3\`. Expires in ${EXPIRY_HOURS} hours.`
+    : `Here are the action items from "${meetingTitle}". I couldn't match this meeting to a client, so please tell me which one it belongs to.\nReply \`client <name>\` in this thread (e.g. \`client Sourcefin\`), then reply with the numbers to create, e.g. \`yes 1,3\`. Expires in ${EXPIRY_HOURS} hours.`;
+
+  return [intro, '', ...lines].join('\n');
 };
 
 export class ProposalService {
@@ -53,8 +52,11 @@ export class ProposalService {
   async propose(candidate: MeetingCandidate): Promise<boolean> {
     if (candidate.actionItems.length === 0) return false;
 
-    const useClientSpace = process.env.PROPOSAL_TARGET === 'client' && candidate.space_name;
-    const target = useClientSpace ? candidate.space_name : process.env.GOOGLE_CHAT_SPACE_ID;
+    const clientMatched = candidate.status === 'detected' && !!candidate.space_name;
+    const useClientSpace = clientMatched && process.env.PROPOSAL_TARGET === 'client';
+    const target = useClientSpace
+      ? candidate.space_name
+      : process.env.PROPOSAL_FALLBACK_SPACE || process.env.GOOGLE_CHAT_SPACE_ID;
     if (!target) {
       console.error('[Proposals] No target space configured');
       return false;
@@ -69,7 +71,7 @@ export class ProposalService {
       existing_task: findExistingTask(item.title, openTasks)?.title ?? null,
     }));
 
-    const posted = await this.chat.postMessage(target, buildProposalText(candidate.title, items));
+    const posted = await this.chat.postMessage(target, buildProposalText(candidate.title, items, clientMatched));
     if (!posted) return false;
 
     await this.store.saveProposal({
@@ -80,6 +82,7 @@ export class ProposalService {
       thread_name: posted.threadName ?? null,
       items,
       expires_at: new Date(Date.now() + EXPIRY_HOURS * 60 * 60 * 1000).toISOString(),
+      client_key: clientMatched ? candidate.client_key : null,
     });
 
     return true;

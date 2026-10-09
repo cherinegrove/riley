@@ -25,6 +25,7 @@ export interface PendingProposal {
   status: string;
   expires_at: string;
   created_numbers: number[];
+  client_key: string | null;
 }
 
 export class RileyStore {
@@ -73,6 +74,14 @@ export class RileyStore {
     return new Set((data || []).map((row: { vribble_meeting_id: string }) => row.vribble_meeting_id));
   }
 
+  async setProposalClient(id: string, clientKey: string): Promise<void> {
+    if (!this.supabase) return;
+    const { error } = await this.supabase.from('meeting_proposals').update({ client_key: clientKey }).eq('id', id);
+    if (error) {
+      console.error('[RileyStore] Failed to set proposal client:', error.message);
+    }
+  }
+
   async saveProposal(proposal: {
     vribble_meeting_id: string;
     title: string;
@@ -81,6 +90,7 @@ export class RileyStore {
     thread_name: string | null;
     items: unknown[];
     expires_at: string;
+    client_key: string | null;
   }): Promise<void> {
     if (!this.supabase) return;
     const { error } = await this.supabase.from('meeting_proposals').upsert(proposal, { onConflict: 'vribble_meeting_id' });
