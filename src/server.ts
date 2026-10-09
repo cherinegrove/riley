@@ -320,25 +320,22 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
       }
     }
 
-    // Generate response
     logger.info('Generating response', { queryType: query.type });
-    const responseText = responder.generateResponse(query, responseData);
-    logger.info('Response generated', { length: responseText?.length });
+    const parts = query.type === 'risk_review'
+      ? responder.generateRiskMessages(query.clientName, responseData)
+      : [responder.generateResponse(query, responseData)];
+    logger.info('Response generated', { parts: parts.length });
 
-    // Send response to Google Chat
     if (spaceName) {
       logger.info('Sending to Google Chat', { spaceName, threadName });
-      const messageData = {
-        text: `*Riley:*\n\n${responseText}`,
-        ...(threadName && { thread: { name: threadName } }),
-      };
-
-      try {
+      for (const [index, part] of parts.entries()) {
+        const messageData = {
+          text: index === 0 ? `*Riley:*\n\n${part}` : part,
+          ...(threadName && { thread: { name: threadName } }),
+        };
         await googleChat.sendMessage(spaceName, messageData);
-        logger.info('Message sent to Google Chat successfully');
-      } catch (error) {
-        logger.error('Failed to send message to Google Chat', { error: String(error) });
       }
+      logger.info('Messages sent to Google Chat');
     } else {
       logger.warn('No space name found');
     }

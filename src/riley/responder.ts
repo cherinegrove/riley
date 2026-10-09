@@ -128,6 +128,94 @@ export class RileyResponder {
     return response.trim();
   }
 
+  generateRiskMessages(clientName: string | undefined, data: ResponseData): string[] {
+    if (!clientName) {
+      return [`I need a name to check. Try: "@Riley /risk [Name or Client]"`];
+    }
+
+    const now = new Date();
+    const daysSince = (iso: string) => Math.floor((now.getTime() - new Date(iso).getTime()) / (1000 * 60 * 60 * 24));
+    const hoursSince = (iso: string) => Math.floor((now.getTime() - new Date(iso).getTime()) / (1000 * 60 * 60));
+    const messages: string[] = [`*Risk review for ${clientName}*\nLast contacted: ${data.lastContacted || 'No record found'}`];
+
+    if (data.unrepliedEmails && data.unrepliedEmails.length > 0) {
+      let text = `📧 *EMAILS AWAITING REPLY (${data.unrepliedEmails.length}):*\n`;
+      data.unrepliedEmails.slice(0, MAX_LISTED).forEach((email) => {
+        const hours = hoursSince(email.date);
+        const days = Math.floor(hours / 24);
+        const timeStr = days > 0 ? `${days}d ${hours % 24}h` : `${hours}h`;
+        text += `  • "${email.subject}" from ${email.from} - awaiting ${timeStr}\n`;
+      });
+      messages.push(text.trimEnd());
+    }
+
+    if (data.meetings && data.meetings.length > 0) {
+      const taskTitles = (data.tasks || []).map((t) => t.title.toLowerCase());
+      const missingActions: Array<{ item: string; meeting: string }> = [];
+      for (const meeting of data.meetings) {
+        for (const actionItem of meeting.actionItems || []) {
+          const actionLower = actionItem.toLowerCase();
+          const hasTask = taskTitles.some((taskTitle) =>
+            taskTitle.includes(actionLower.substring(0, 30)) || actionLower.includes(taskTitle.substring(0, 30))
+          );
+          if (!hasTask) {
+            missingActions.push({ item: actionItem, meeting: meeting.title });
+          }
+        }
+      }
+      if (missingActions.length > 0) {
+        let text = `📋 *MISSING TASKS FROM MEETINGS (${missingActions.length}):*\n`;
+        missingActions.slice(0, MAX_LISTED).forEach((action) => {
+          text += `  • "${action.item}" from "${action.meeting}"\n`;
+        });
+        messages.push(text.trimEnd());
+      }
+    }
+
+    if (data.overdueTasks && data.overdueTasks.length > 0) {
+      let text = `🚨 *OVERDUE TASKS (${data.overdueTasks.length}):*\n`;
+      data.overdueTasks.slice(0, MAX_LISTED).forEach((task) => {
+        text += `  • ${task.title} - ${task.days_overdue || 0} days overdue [${task.assigned_to}]\n`;
+      });
+      messages.push(text.trimEnd());
+    }
+
+    if (data.awaitingFeedbackTasks && data.awaitingFeedbackTasks.length > 0) {
+      const internal = data.awaitingFeedbackTasks.filter((t) => (t.status as string) === 'awaiting_feedback_internal');
+      const external = data.awaitingFeedbackTasks.filter((t) => (t.status as string) === 'awaiting_feedback_external');
+
+      if (internal.length > 0) {
+        let text = `⏰ *AWAITING INTERNAL FEEDBACK (${internal.length}):*\n`;
+        internal.slice(0, MAX_LISTED).forEach((task) => {
+          text += `  • ${task.title} - waiting ${hoursSince(task.updated_at)}h [${task.assigned_to}]\n`;
+        });
+        messages.push(text.trimEnd());
+      }
+
+      if (external.length > 0) {
+        let text = `⏰ *AWAITING EXTERNAL FEEDBACK (${external.length}):*\n`;
+        external.slice(0, MAX_LISTED).forEach((task) => {
+          text += `  • ${task.title} - waiting ${daysSince(task.updated_at)} days [${task.assigned_to}]\n`;
+        });
+        messages.push(text.trimEnd());
+      }
+    }
+
+    if (data.staleTasks && data.staleTasks.length > 0) {
+      let text = `⏳ *NOT UPDATED 7+ DAYS (${data.staleTasks.length}):*\n`;
+      data.staleTasks.slice(0, MAX_LISTED).forEach((task) => {
+        text += `  • ${task.title} - not updated ${daysSince(task.updated_at)} days [${task.assigned_to}]\n`;
+      });
+      messages.push(text.trimEnd());
+    }
+
+    if (messages.length === 1) {
+      messages.push(`✅ Nothing at risk for ${clientName}`);
+    }
+
+    return messages;
+  }
+
   private generateClientStatusResponse(clientName: string | undefined, data: ResponseData): string {
     if (!clientName) {
       return `I need a client name to check their status. Try: "@Riley how are we doing on [Client Name]?"`;
