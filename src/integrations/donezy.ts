@@ -201,6 +201,40 @@ export class DonezyIntegration {
     return { id: open[0].id, name: open[0].name };
   }
 
+  async getOpenProjects(): Promise<Array<{ id: string; name: string; client_name: string | null }>> {
+    const { data: projects, error } = await this.supabase
+      .from('projects')
+      .select('id, name, client_id')
+      .eq('status', 'in-progress');
+    if (error) {
+      console.error('[Donezy] Failed to load open projects:', error.message);
+      return [];
+    }
+
+    const { data: clients } = await this.supabase.from('clients').select('id, name');
+    const clientNames = new Map(((clients || []) as any[]).map((c) => [c.id, c.name as string]));
+
+    return ((projects || []) as any[]).map((p) => ({
+      id: p.id,
+      name: p.name,
+      client_name: clientNames.get(p.client_id) ?? null,
+    }));
+  }
+
+  async getOpenTasksForProject(projectId: string): Promise<DonezyTask[]> {
+    await this.loadProjectNames();
+    const { data, error } = await this.supabase
+      .from('tasks_with_assignees')
+      .select('*')
+      .eq('project_id', projectId)
+      .not('status', 'in', `(${DONEZY_CLOSED_STATUSES.join(',')})`);
+    if (error) {
+      console.error('[Donezy] Failed to load project tasks:', error.message);
+      return [];
+    }
+    return ((data || []) as any[]).map((row) => this.mapRowToTask(row));
+  }
+
   async getAssigneeIdByName(name: string): Promise<string | null> {
     const { data, error } = await this.supabase
       .from('tasks_with_assignees')

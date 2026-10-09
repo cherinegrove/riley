@@ -11,6 +11,7 @@ import { createRileyStore } from './integrations/riley-store';
 import { MeetingCandidate, MeetingTrigger } from './riley/meeting-trigger';
 import { ProposalService } from './riley/proposals';
 import { ApprovalService } from './riley/approvals';
+import { ProjectReview } from './riley/project-review';
 import { GoogleChatMessage, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL } from './utils/types';
 
 const app: Express = express();
@@ -39,6 +40,8 @@ const meetingTrigger = new MeetingTrigger(config.vribble.url, config.vribble.key
   proposals.propose(candidate)
 );
 meetingTrigger.start(5 * 60 * 1000);
+const projectReview = new ProjectReview(rileyStore, googleChat, donezy);
+projectReview.start();
 
 // Initialize utilities
 const parser = createParser();
@@ -396,6 +399,15 @@ app.post('/test/repost-proposal/:meetingId', async (req: Request, res: Response)
   }
   const posted = await proposals.propose(candidate);
   res.status(200).json({ posted, space: candidate.space_name, items: candidate.actionItems.length });
+});
+
+app.post('/test/project-review/:projectId', async (req: Request, res: Response): Promise<void> => {
+  const project = (await donezy.getOpenProjects()).find((p) => p.id === req.params.projectId);
+  if (!project) {
+    res.status(404).json({ error: 'no open project with that id' });
+    return;
+  }
+  res.status(200).json({ project: project.name, messages: await projectReview.messagesFor(project.id, project.name) });
 });
 
 app.post('/test/meeting-proposal', async (_req: Request, res: Response): Promise<void> => {

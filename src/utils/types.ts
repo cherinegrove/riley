@@ -62,7 +62,7 @@ export interface DonezyTask {
   description?: string;
   project_name?: string;
   status: string;
-  priority: 'low' | 'medium' | 'high' | 'critical';
+  priority: string;
   assigned_to: string;
   due_date?: string;
   created_at: string;
