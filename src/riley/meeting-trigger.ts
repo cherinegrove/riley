@@ -150,6 +150,32 @@ export class MeetingTrigger {
     return candidates;
   }
 
+  async candidateFor(meetingId: string): Promise<MeetingCandidate | null> {
+    if (!this.vribble) return null;
+
+    const { data, error } = await this.vribble
+      .from('meetings')
+      .select('id, title, meeting_date, duration_minutes, attendees, action_items')
+      .eq('id', meetingId)
+      .single();
+    if (error || !data) return null;
+
+    const meeting = data as MeetingRow;
+    const start = new Date(meeting.meeting_date);
+    const end = new Date(start.getTime() + (meeting.duration_minutes ?? DEFAULT_DURATION_MINUTES) * 60 * 1000);
+    const match = matchClient(meeting.attendees, await this.store.listSpaces());
+
+    return {
+      vribble_meeting_id: meeting.id,
+      title: meeting.title,
+      meeting_end_at: end.toISOString(),
+      client_key: match.space?.client_key ?? null,
+      space_name: match.space?.space_name ?? null,
+      status: match.status,
+      actionItems: parseActionItems(meeting.action_items || []),
+    };
+  }
+
   start(intervalMs: number): void {
     setInterval(() => {
       this.scan()

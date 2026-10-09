@@ -388,6 +388,16 @@ app.post('/test/meeting-trigger', async (_req: Request, res: Response): Promise<
   res.status(200).json({ count: candidates.length, candidates });
 });
 
+app.post('/test/repost-proposal/:meetingId', async (req: Request, res: Response): Promise<void> => {
+  const candidate = await meetingTrigger.candidateFor(req.params.meetingId);
+  if (!candidate || candidate.status !== 'detected') {
+    res.status(200).json({ posted: false, status: candidate?.status ?? 'not_found' });
+    return;
+  }
+  const posted = await proposals.propose(candidate);
+  res.status(200).json({ posted, space: candidate.space_name, items: candidate.actionItems.length });
+});
+
 app.post('/test/meeting-proposal', async (_req: Request, res: Response): Promise<void> => {
   const candidates = await meetingTrigger.scan(new Date(), false);
   const withActions = candidates.find((c) => c.actionItems.length > 0 && c.status !== 'duplicate');
