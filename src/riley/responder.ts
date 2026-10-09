@@ -136,7 +136,7 @@ export class RileyResponder {
     const now = new Date();
     const daysSince = (iso: string) => Math.floor((now.getTime() - new Date(iso).getTime()) / (1000 * 60 * 60 * 24));
     const hoursSince = (iso: string) => Math.floor((now.getTime() - new Date(iso).getTime()) / (1000 * 60 * 60));
-    const messages: string[] = [`*Risk review for ${clientName}*\nLast contacted: ${data.lastContacted || 'No record found'}`];
+    const messages: string[] = [`*Risk review for ${clientName}*`];
 
     if (data.unrepliedEmails && data.unrepliedEmails.length > 0) {
       let text = `📧 *EMAILS AWAITING REPLY (${data.unrepliedEmails.length}):*\n`;
