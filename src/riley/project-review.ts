@@ -28,7 +28,7 @@ export const buildReviewMessages = (projectName: string, tasks: DonezyTask[], no
     const due = sastDate(t.due_date);
     return due !== null && due >= today && due <= weekEnd;
   });
-  const noAssignee = tasks.filter((t) => t.assigned_to === 'Unassigned');
+  const missingDetails = tasks.filter((t) => t.assigned_to === 'Unassigned' || !t.due_date);
   const awaitingInternal = tasks.filter((t) => t.status === DONEZY_AWAITING_INTERNAL);
   const staleExternal = tasks.filter((t) => t.status === DONEZY_AWAITING_EXTERNAL && daysSince(t.updated_at, now) >= 7);
   const urgentOverdue = tasks.filter((t) => t.priority === 'urgent' && (sastDate(t.due_date) ?? '9999') < today);
@@ -42,10 +42,15 @@ export const buildReviewMessages = (projectName: string, tasks: DonezyTask[], no
     );
   }
 
-  if (noAssignee.length > 0) {
+  if (missingDetails.length > 0) {
     sections.push(
-      [`*${projectName}* – 👤 No assignee (${noAssignee.length})`, ...noAssignee.map((t) =>
-        `• ${t.title} – ${t.due_date ? `due ${formatDate(sastDate(t.due_date) as string)}` : 'no due date'}`)].join('\n')
+      [`*${projectName}* – 👤 No assignee or no due date (${missingDetails.length})`, ...missingDetails.map((t) => {
+        const missing = [
+          t.assigned_to === 'Unassigned' ? 'no assignee' : null,
+          !t.due_date ? 'no due date' : null,
+        ].filter(Boolean).join(', ');
+        return `• ${t.title} – missing: ${missing}`;
+      })].join('\n')
     );
   }
 
