@@ -176,6 +176,31 @@ export class DonezyIntegration {
     return daysDiff > 0 ? daysDiff : undefined;
   }
 
+  async findOpenProjectForClient(clientName: string): Promise<{ id: string; name: string } | { error: string }> {
+    const { data: clients, error: clientError } = await this.supabase
+      .from('clients')
+      .select('id, name')
+      .ilike('name', clientName.trim());
+    if (clientError) return { error: clientError.message };
+
+    const client = ((clients || []) as any[])[0];
+    if (!client) return { error: `there is no Donezy client called "${clientName}"` };
+
+    const { data: projects, error: projectError } = await this.supabase
+      .from('projects')
+      .select('id, name')
+      .eq('client_id', client.id)
+      .eq('status', 'in-progress');
+    if (projectError) return { error: projectError.message };
+
+    const open = (projects || []) as any[];
+    if (open.length === 0) return { error: `${client.name} has no open project in Donezy` };
+    if (open.length > 1) {
+      return { error: `${client.name} has ${open.length} open projects (${open.map((p) => p.name).join(', ')}), so I can't tell which one to use` };
+    }
+    return { id: open[0].id, name: open[0].name };
+  }
+
   async getAssigneeIdByName(name: string): Promise<string | null> {
     const { data, error } = await this.supabase
       .from('tasks_with_assignees')

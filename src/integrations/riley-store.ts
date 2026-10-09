@@ -130,16 +130,6 @@ export class RileyStore {
     return data && data.length > 0 ? data[0].client_key : null;
   }
 
-  async donezyProjectForClient(clientKey: string): Promise<string | null> {
-    if (!this.supabase) return null;
-    const { data } = await this.supabase
-      .from('client_projects')
-      .select('donezy_project_id')
-      .eq('client_key', clientKey)
-      .limit(1);
-    return data && data.length > 0 ? data[0].donezy_project_id : null;
-  }
-
   async recordMeeting(meeting: ProcessedMeeting): Promise<void> {
     if (!this.supabase) return;
     const { error } = await this.supabase.from('processed_meetings').upsert(meeting, { onConflict: 'vribble_meeting_id' });

@@ -64,12 +64,16 @@ export class ApprovalService {
       : proposal.items.filter((item) => (command.numbers as number[]).includes(item.number));
 
     const clientKey = await this.store.clientKeyForSpace(spaceName);
-    const projectId = clientKey ? await this.store.donezyProjectForClient(clientKey) : null;
-    if (!projectId) {
-      return `I can't create these tasks yet: no Donezy project is linked to this space. Add it to the client_projects table first.`;
+    if (!clientKey) {
+      return "I can't create these tasks: this space isn't linked to a client.";
     }
 
-    return this.createTasks(proposal, chosen, projectId);
+    const project = await this.donezy.findOpenProjectForClient(clientKey);
+    if ('error' in project) {
+      return `I can't create these tasks yet: ${project.error}.`;
+    }
+
+    return this.createTasks(proposal, chosen, project.id);
   }
 
   private async createTasks(
