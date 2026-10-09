@@ -36,8 +36,8 @@ export const buildProposalText = (meetingTitle: string, items: ProposalItem[]): 
   });
 
   return [
-    `*Action items from "${meetingTitle}"*`,
-    `Reply in this thread with the numbers to create in Donezy, e.g. \`yes 1,3\`. Expires in ${EXPIRY_HOURS} hours.`,
+    `Here are the action items from "${meetingTitle}".`,
+    `Items marked (new) are not in Donezy yet. Please reply in this thread with the numbers to create, e.g. \`yes 1,3\`. Expires in ${EXPIRY_HOURS} hours.`,
     '',
     ...lines,
   ].join('\n');
