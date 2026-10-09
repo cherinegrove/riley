@@ -53,6 +53,23 @@ export class GoogleChatIntegration {
     }
   }
 
+  async postMessage(spaceName: string, text: string): Promise<{ name: string; threadName: string } | null> {
+    try {
+      const cleanSpaceName = spaceName.startsWith('spaces/') ? spaceName : `spaces/${spaceName}`;
+      const token = await this.jwtAuth.getAccessToken();
+
+      const { data } = await this.client.post(`/${cleanSpaceName}/messages`, { text }, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      return { name: data.name, threadName: data.thread?.name };
+    } catch (error) {
+      console.error('Error posting message to Google Chat:', error);
+      return null;
+    }
+  }
+
   async sendThreadReply(spaceName: string, threadName: string, message: string): Promise<boolean> {
     try {
       // Ensure spaceName doesn't have "spaces/" prefix already

@@ -61,6 +61,22 @@ export class RileyStore {
     return new Set((data || []).map((row: { vribble_meeting_id: string }) => row.vribble_meeting_id));
   }
 
+  async saveProposal(proposal: {
+    vribble_meeting_id: string;
+    title: string;
+    space_name: string;
+    message_name: string | null;
+    thread_name: string | null;
+    items: unknown[];
+    expires_at: string;
+  }): Promise<void> {
+    if (!this.supabase) return;
+    const { error } = await this.supabase.from('meeting_proposals').upsert(proposal, { onConflict: 'vribble_meeting_id' });
+    if (error) {
+      console.error('[RileyStore] Failed to save proposal:', error.message);
+    }
+  }
+
   async recordMeeting(meeting: ProcessedMeeting): Promise<void> {
     if (!this.supabase) return;
     const { error } = await this.supabase.from('processed_meetings').upsert(meeting, { onConflict: 'vribble_meeting_id' });

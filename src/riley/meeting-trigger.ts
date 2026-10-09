@@ -63,7 +63,12 @@ export const matchClient = (
 export class MeetingTrigger {
   private vribble: SupabaseClient | null;
 
-  constructor(vribbleUrl: string | undefined, vribbleKey: string | undefined, private store: RileyStore) {
+  constructor(
+    vribbleUrl: string | undefined,
+    vribbleKey: string | undefined,
+    private store: RileyStore,
+    private onDetected?: (candidate: MeetingCandidate) => Promise<unknown>
+  ) {
     this.vribble = vribbleUrl && vribbleKey ? createClient(vribbleUrl, vribbleKey) : null;
   }
 
@@ -134,6 +139,9 @@ export class MeetingTrigger {
           space_name: candidate.space_name,
           status: candidate.status,
         });
+        if (candidate.status === 'detected' && this.onDetected) {
+          await this.onDetected(candidate);
+        }
       }
 
       candidates.push(candidate);

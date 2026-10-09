@@ -8,7 +8,8 @@ import { createResponder, ResponseData } from './riley/responder';
 import { createLogger } from './riley/logger';
 import { createDailyDigest } from './riley/daily-digest';
 import { createRileyStore } from './integrations/riley-store';
-import { MeetingTrigger } from './riley/meeting-trigger';
+import { MeetingCandidate, MeetingTrigger } from './riley/meeting-trigger';
+import { ProposalService } from './riley/proposals';
 import { GoogleChatMessage, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL } from './utils/types';
 
 const app: Express = express();
@@ -31,7 +32,10 @@ const donezy = createDonezyIntegration(config.donezy.url, config.donezy.key);
 const hubspot = createHubSpotIntegration(config.hubspot.apiKey);
 const googleChat = createGoogleChatIntegration();
 const rileyStore = createRileyStore();
-const meetingTrigger = new MeetingTrigger(config.vribble.url, config.vribble.key, rileyStore);
+const proposals = new ProposalService(rileyStore, googleChat, donezy);
+const meetingTrigger = new MeetingTrigger(config.vribble.url, config.vribble.key, rileyStore, (candidate: MeetingCandidate) =>
+  proposals.propose(candidate)
+);
 meetingTrigger.start(5 * 60 * 1000);
 
 // Initialize utilities
@@ -364,6 +368,17 @@ app.post('/webhook/google-chat', handleGoogleChatWebhook);
 app.post('/test/meeting-trigger', async (_req: Request, res: Response): Promise<void> => {
   const candidates = await meetingTrigger.scan(new Date(), false);
   res.status(200).json({ count: candidates.length, candidates });
+});
+
+app.post('/test/meeting-proposal', async (_req: Request, res: Response): Promise<void> => {
+  const candidates = await meetingTrigger.scan(new Date(), false);
+  const withActions = candidates.find((c) => c.actionItems.length > 0 && c.status !== 'duplicate');
+  if (!withActions) {
+    res.status(200).json({ posted: false, reason: 'no meeting with action items' });
+    return;
+  }
+  const posted = await proposals.propose(withActions);
+  res.status(200).json({ posted, meeting: withActions.title, items: withActions.actionItems.length });
 });
 
 app.get('/health', (_req: Request, res: Response) => {
