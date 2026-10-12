@@ -35,9 +35,10 @@ export const buildProposalText = (meetingTitle: string, items: ProposalItem[], c
     return `${item.number}. *${item.title}*${detail}${assignee}${status}`;
   });
 
+  const heading = `*Action Items from "${meetingTitle}"*`;
   const intro = clientMatched
-    ? `Here are the action items from "${meetingTitle}".\nItems marked (new) are not in Donezy yet. Please reply in this thread with the numbers to create, e.g. \`yes 1,3\`. Expires in ${EXPIRY_HOURS} hours.`
-    : `Here are the action items from "${meetingTitle}". I couldn't match this meeting to a client, so please tell me which one it belongs to.\nReply \`client <name>\` in this thread (e.g. \`client Sourcefin\`), then reply with the numbers to create, e.g. \`yes 1,3\`. Expires in ${EXPIRY_HOURS} hours.`;
+    ? `${heading}\nItems marked (new) are not in Donezy yet. Please reply in this thread with the numbers to create, e.g. \`yes 1,3\`. Expires in ${EXPIRY_HOURS} hours.`
+    : `${heading}\nI couldn't match this meeting to a client, so please tell me which one it belongs to.\nReply \`client <name>\` in this thread (e.g. \`client Sourcefin\`), then reply with the numbers to create, e.g. \`yes 1,3\`. Expires in ${EXPIRY_HOURS} hours.`;
 
   return [intro, '', ...lines].join('\n');
 };
