@@ -401,6 +401,11 @@ app.post('/test/repost-proposal/:meetingId', async (req: Request, res: Response)
   res.status(200).json({ posted, space: candidate.space_name, items: candidate.actionItems.length });
 });
 
+app.post('/test/resend-project-reviews', async (_req: Request, res: Response): Promise<void> => {
+  await projectReview.runAll(true);
+  res.status(200).json({ done: true });
+});
+
 app.post('/test/project-review/:projectId', async (req: Request, res: Response): Promise<void> => {
   const project = (await donezy.getOpenProjects()).find((p) => p.id === req.params.projectId);
   if (!project) {

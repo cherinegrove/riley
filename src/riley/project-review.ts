@@ -95,7 +95,7 @@ export class ProjectReview {
     return buildReviewMessages(projectName, tasks, new Date());
   }
 
-  async runAll(): Promise<void> {
+  async runAll(onlyWithSpace = false): Promise<void> {
     const projects = await this.donezy.getOpenProjects();
     const spaces = await this.store.listSpaces();
     const fallback = process.env.PROPOSAL_FALLBACK_SPACE || process.env.GOOGLE_CHAT_SPACE_ID;
@@ -105,6 +105,7 @@ export class ProjectReview {
 
     for (const project of projects) {
       const projectSpace = spaceFor(project.name) ?? spaceFor(project.client_name);
+      if (onlyWithSpace && !projectSpace) continue;
       const target = process.env.REVIEW_TARGET === 'client' && projectSpace ? projectSpace.space_name : fallback;
       if (!target) {
         console.error('[ProjectReview] No target space configured');
