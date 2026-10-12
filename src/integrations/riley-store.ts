@@ -64,6 +64,16 @@ export class RileyStore {
     return data || [];
   }
 
+  async listTitleAliases(): Promise<Array<{ keyword: string; client_key: string }>> {
+    if (!this.supabase) return [];
+    const { data, error } = await this.supabase.from('meeting_title_aliases').select('keyword, client_key');
+    if (error) {
+      console.error('[RileyStore] Failed to list title aliases:', error.message);
+      return [];
+    }
+    return data || [];
+  }
+
   async processedMeetingIds(ids: string[]): Promise<Set<string>> {
     if (!this.supabase || ids.length === 0) return new Set();
     const { data, error } = await this.supabase.from('processed_meetings').select('vribble_meeting_id').in('vribble_meeting_id', ids);

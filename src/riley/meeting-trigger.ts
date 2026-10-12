@@ -60,6 +60,33 @@ export const matchClient = (
   return { status: 'no_client', space: null };
 };
 
+export const matchByTitle = (
+  title: string,
+  aliases: Array<{ keyword: string; client_key: string }>,
+  spaces: ChatSpace[]
+): { status: 'detected'; space: ChatSpace } | null => {
+  const lowerTitle = title.toLowerCase();
+  const sorted = [...aliases].sort((a, b) => b.keyword.length - a.keyword.length);
+  for (const alias of sorted) {
+    if (!lowerTitle.includes(alias.keyword.toLowerCase())) continue;
+    const space = spaces.find((s) => s.client_key === alias.client_key);
+    if (space) return { status: 'detected', space };
+  }
+  return null;
+};
+
+const resolveClient = async (
+  title: string,
+  attendees: string[] | null,
+  store: RileyStore
+): Promise<{ status: 'detected' | 'no_client' | 'ambiguous_client'; space: ChatSpace | null }> => {
+  const spaces = await store.listSpaces();
+  const byAttendee = matchClient(attendees, spaces);
+  if (byAttendee.status === 'detected') return byAttendee;
+  const byTitle = matchByTitle(title, await store.listTitleAliases(), spaces);
+  return byTitle ?? byAttendee;
+};
+
 export class MeetingTrigger {
   private vribble: SupabaseClient | null;
 
@@ -98,7 +125,6 @@ export class MeetingTrigger {
       .filter(({ end }) => end <= now);
 
     const alreadyProcessed = await this.store.processedMeetingIds(ended.map(({ meeting }) => meeting.id));
-    const spaces = await this.store.listSpaces();
     const kept: Array<{ title: string; start: number }> = [];
     const candidates: MeetingCandidate[] = [];
 
@@ -115,7 +141,7 @@ export class MeetingTrigger {
         status = 'duplicate';
       } else {
         kept.push({ title: meeting.title, start: start.getTime() });
-        const match = matchClient(meeting.attendees, spaces);
+        const match = await resolveClient(meeting.title, meeting.attendees, this.store);
         status = match.status;
         space = match.space;
       }
@@ -163,7 +189,7 @@ export class MeetingTrigger {
     const meeting = data as MeetingRow;
     const start = new Date(meeting.meeting_date);
     const end = new Date(start.getTime() + (meeting.duration_minutes ?? DEFAULT_DURATION_MINUTES) * 60 * 1000);
-    const match = matchClient(meeting.attendees, await this.store.listSpaces());
+    const match = await resolveClient(meeting.title, meeting.attendees, this.store);
 
     return {
       vribble_meeting_id: meeting.id,
