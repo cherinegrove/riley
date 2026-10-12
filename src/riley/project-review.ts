@@ -16,6 +16,8 @@ const sastDate = (value: string | null | undefined): string | null => {
 const formatDate = (ymd: string): string =>
   new Date(`${ymd}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: TZ });
 
+const normalise = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+
 const daysSince = (iso: string, now: Date): number => Math.floor((now.getTime() - new Date(iso).getTime()) / DAY_MS);
 
 const taskLine = (task: DonezyTask, detail: string): string => `• ${task.title} – ${detail} – ${task.assigned_to}`;
@@ -98,11 +100,12 @@ export class ProjectReview {
     const spaces = await this.store.listSpaces();
     const fallback = process.env.PROPOSAL_FALLBACK_SPACE || process.env.GOOGLE_CHAT_SPACE_ID;
 
+    const spaceFor = (name: string | null) =>
+      name ? spaces.find((s) => s.client_key && normalise(s.client_key) === normalise(name)) : undefined;
+
     for (const project of projects) {
-      const clientSpace = project.client_name
-        ? spaces.find((s) => s.client_key === project.client_name?.trim().toLowerCase())
-        : undefined;
-      const target = process.env.REVIEW_TARGET === 'client' && clientSpace ? clientSpace.space_name : fallback;
+      const projectSpace = spaceFor(project.name) ?? spaceFor(project.client_name);
+      const target = process.env.REVIEW_TARGET === 'client' && projectSpace ? projectSpace.space_name : fallback;
       if (!target) {
         console.error('[ProjectReview] No target space configured');
         continue;
