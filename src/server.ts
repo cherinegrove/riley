@@ -192,6 +192,17 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
       return;
     }
 
+    const createReply = await approvals.handleCreateRequest(parsed.text, parsed.userEmail);
+    if (createReply) {
+      const replyThread = payload.message?.thread?.name;
+      await googleChat.sendMessage(payload.message?.space?.name || '', {
+        text: createReply,
+        ...(replyThread && { thread: { name: replyThread } }),
+      });
+      res.status(200).json({});
+      return;
+    }
+
     const approvalReply = await approvals.handle(
       parsed.text,
       payload.message?.space?.name || '',

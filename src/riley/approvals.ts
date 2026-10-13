@@ -107,6 +107,52 @@ export class ApprovalService {
     return filedMessage ? `${filedMessage}\n\n${result}` : result;
   }
 
+  async handleCreateRequest(text: string, senderEmail: string | undefined): Promise<string | null> {
+    const cleaned = text.replace(/@riley\b/i, '').trim();
+    const header = cleaned.match(/\bcreate\b[^\n]*?\bunder\s+([^\n]+)/i);
+    if (!header) return null;
+
+    if (senderEmail?.toLowerCase() !== APPROVER_EMAIL) {
+      return 'Only Cherine can create tasks from chat.';
+    }
+
+    const target = header[1].trim().replace(/\s+client$/i, '');
+    const titles = cleaned
+      .split('\n')
+      .map((line) => line.match(/^\s*\d+[.)]\s+(.+)$/)?.[1].trim())
+      .filter((title): title is string => !!title);
+    if (titles.length === 0) {
+      return 'Add the tasks as numbered lines, e.g. "Please create these tasks under Sourcefin" then "1. Task name".';
+    }
+
+    const project = await this.donezy.findOpenProjectForClient(target);
+    if ('error' in project) {
+      return `I can't create these tasks: ${project.error}. Name the client or project exactly, e.g. "under Stratasys Direct".`;
+    }
+
+    const created: string[] = [];
+    const failed: string[] = [];
+    for (const title of titles) {
+      try {
+        await this.donezy.createTask({
+          title,
+          description: 'Created from Riley chat',
+          project_id: project.id,
+          creator_id: CREATOR_DONEZY_USER_ID,
+          assignee_id: null,
+        });
+        created.push(title);
+      } catch (error) {
+        failed.push(`${title} (${error instanceof Error ? error.message : String(error)})`);
+      }
+    }
+
+    const lines: string[] = [];
+    if (created.length > 0) lines.push(`Created ${created.length} task(s) in ${project.name}:\n${created.map((t) => `• ${t}`).join('\n')}`);
+    if (failed.length > 0) lines.push(`Could not create ${failed.length} task(s):\n${failed.map((t) => `• ${t}`).join('\n')}`);
+    return lines.join('\n\n');
+  }
+
   private async createTasks(
     proposal: PendingProposal,
     items: PendingProposal['items'],
