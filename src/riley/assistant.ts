@@ -35,6 +35,18 @@ const TOOLS = [
     },
   },
   {
+    name: 'tasks_by_status',
+    description: 'List Donezy tasks with an exact status, optionally filtered to a project name. Valid statuses: backlog, todo, in-progress, review, awaiting-ext (awaiting external feedback), awaiting-feedback-(internal) (awaiting internal feedback), done.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string' },
+        project_name: { type: 'string' },
+      },
+      required: ['status'],
+    },
+  },
+  {
     name: 'find_open_tasks',
     description: 'Search open Donezy tasks by part of their title. Use this when the user wants to close or mark a task done: it returns the matches with short IDs. It never changes anything.',
     input_schema: {
@@ -131,6 +143,10 @@ export class Assistant {
           ? overdue.filter((t) => t.project_name?.toLowerCase().includes(input.project_name.toLowerCase()))
           : overdue;
         return summariseTasks(filtered);
+      }
+      if (name === 'tasks_by_status') {
+        const tasks = await this.donezy.getTasksByStatus(input.status, input.project_name);
+        return summariseTasks(tasks);
       }
       if (name === 'find_open_tasks') {
         const matches = await this.donezy.findOpenTasksByTitle(input.title_text);

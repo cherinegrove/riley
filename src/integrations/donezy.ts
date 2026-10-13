@@ -248,6 +248,21 @@ export class DonezyIntegration {
     return ((data || []) as any[]).map((row) => this.mapRowToTask(row));
   }
 
+  async getTasksByStatus(status: string, projectName?: string): Promise<DonezyTask[]> {
+    await this.loadProjectNames();
+    const { data, error } = await this.supabase
+      .from('tasks_with_assignees')
+      .select('*')
+      .eq('status', status)
+      .order('updated_at', { ascending: true })
+      .limit(200);
+    if (error) throw new Error(error.message);
+    const tasks = ((data || []) as any[]).map((row) => this.mapRowToTask(row));
+    return projectName
+      ? tasks.filter((t) => (t.project_name ?? '').toLowerCase().includes(projectName.toLowerCase()))
+      : tasks;
+  }
+
   async findOpenTasksByTitle(text: string): Promise<Array<{ id: string; title: string; project_name: string; assigned_to: string }>> {
     await this.loadProjectNames();
     const { data, error } = await this.supabase
