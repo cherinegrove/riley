@@ -248,6 +248,43 @@ export class DonezyIntegration {
     return ((data || []) as any[]).map((row) => this.mapRowToTask(row));
   }
 
+  async findOpenTasksByTitle(text: string): Promise<Array<{ id: string; title: string; project_name: string; assigned_to: string }>> {
+    await this.loadProjectNames();
+    const { data, error } = await this.supabase
+      .from('tasks_with_assignees')
+      .select('*')
+      .ilike('title', `%${text.trim()}%`)
+      .neq('status', 'done')
+      .limit(10);
+    if (error) throw new Error(error.message);
+    return ((data || []) as any[]).map((row) => {
+      const task = this.mapRowToTask(row);
+      return { id: row.id, title: task.title, project_name: task.project_name ?? '', assigned_to: task.assigned_to };
+    });
+  }
+
+  async findOpenTaskByIdPrefix(prefix: string): Promise<{ id: string; title: string; project_name: string } | null> {
+    await this.loadProjectNames();
+    const { data, error } = await this.supabase
+      .from('tasks_with_assignees')
+      .select('*')
+      .neq('status', 'done');
+    if (error) throw new Error(error.message);
+    const wanted = prefix.toLowerCase();
+    const rows = ((data || []) as any[]).filter((row) => String(row.id).toLowerCase().startsWith(wanted));
+    if (rows.length !== 1) return null;
+    const task = this.mapRowToTask(rows[0]);
+    return { id: rows[0].id, title: task.title, project_name: task.project_name ?? '' };
+  }
+
+  async markTaskDone(id: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('tasks')
+      .update({ status: 'done', updated_at: new Date().toISOString() } as never)
+      .eq('id', id);
+    if (error) throw new Error(error.message);
+  }
+
   async getAssigneeIdByName(name: string): Promise<string | null> {
     const { data, error } = await this.supabase
       .from('tasks_with_assignees')

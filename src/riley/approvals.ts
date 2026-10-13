@@ -107,6 +107,36 @@ export class ApprovalService {
     return filedMessage ? `${filedMessage}\n\n${result}` : result;
   }
 
+  async handleTaskUpdate(text: string, senderEmail: string | undefined): Promise<string | null> {
+    const cleaned = text.replace(/@riley\b/i, '').trim();
+    const confirm = cleaned.match(/^confirm\s+done\s+([0-9a-f]{6,})$/i);
+    const mark = cleaned.match(/^(?:please\s+)?(?:mark|set)\s+["“]?(.+?)["”]?\s+as\s+done[.!]?$/i);
+    if (!confirm && !mark) return null;
+
+    if (senderEmail?.toLowerCase() !== APPROVER_EMAIL) {
+      return 'Only Cherine can change tasks from chat.';
+    }
+
+    if (confirm) {
+      const task = await this.donezy.findOpenTaskByIdPrefix(confirm[1]);
+      if (!task) {
+        return `I couldn't find one open task with the ID ${confirm[1]}. Ask me to mark it done again to get the current ID.`;
+      }
+      await this.donezy.markTaskDone(task.id);
+      return `Marked "${task.title}" as done in ${task.project_name}.`;
+    }
+
+    const matches = await this.donezy.findOpenTasksByTitle(mark![1]);
+    if (matches.length === 0) {
+      return `I couldn't find an open task matching "${mark![1]}".`;
+    }
+    const lines = matches.map((t) => `• ${t.title} – ${t.project_name} – ${t.assigned_to} (ID ${t.id.slice(0, 8)})`);
+    if (matches.length === 1) {
+      return `Found one open task:\n${lines[0]}\nReply \`confirm done ${matches[0].id.slice(0, 8)}\` to mark it done.`;
+    }
+    return `Found ${matches.length} open tasks matching "${mark![1]}". Pick one and reply \`confirm done <ID>\`:\n${lines.join('\n')}`;
+  }
+
   async handleCreateRequest(text: string, senderEmail: string | undefined): Promise<string | null> {
     const cleaned = text.replace(/@riley\b/i, '').trim();
     const header = cleaned.match(/\bcreate\b[^\n]*?\bunder\s+([^\n]+)/i);
