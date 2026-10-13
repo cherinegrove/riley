@@ -12,6 +12,7 @@ import { MeetingCandidate, MeetingTrigger } from './riley/meeting-trigger';
 import { ProposalService } from './riley/proposals';
 import { ApprovalService } from './riley/approvals';
 import { ProjectReview, ReviewCategory } from './riley/project-review';
+import { Assistant } from './riley/assistant';
 import { GoogleChatMessage, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL } from './utils/types';
 
 const app: Express = express();
@@ -33,6 +34,7 @@ app.use(express.static('public'));
 const donezy = createDonezyIntegration(config.donezy.url, config.donezy.key);
 const hubspot = createHubSpotIntegration(config.hubspot.apiKey);
 const googleChat = createGoogleChatIntegration();
+const assistant = new Assistant(process.env.ANTHROPIC_API_KEY, donezy, hubspot);
 const rileyStore = createRileyStore();
 const proposals = new ProposalService(rileyStore, googleChat, donezy);
 const approvals = new ApprovalService(rileyStore, donezy);
@@ -225,6 +227,17 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
     // Parse the query
     const query = parser.parse(parsed.text);
     logger.info(`Parsed query: ${query.type}`, { query });
+
+    if (query.type === 'unknown' && assistant.enabled) {
+      const answer = await assistant.answer(parsed.text.replace(/@riley\b/i, '').trim());
+      const replyThread = payload.message?.thread?.name;
+      await googleChat.sendMessage(payload.message?.space?.name || '', {
+        text: answer,
+        ...(replyThread && { thread: { name: replyThread } }),
+      });
+      res.status(200).json({});
+      return;
+    }
 
     // Update audit log with query type
     logger.setResponseSummary(`Query type: ${query.type}`);
