@@ -35,6 +35,15 @@ const TOOLS = [
     },
   },
   {
+    name: 'find_open_tasks',
+    description: 'Search open Donezy tasks by part of their title. Use this when the user wants to close or mark a task done: it returns the matches with short IDs. It never changes anything.',
+    input_schema: {
+      type: 'object',
+      properties: { title_text: { type: 'string' } },
+      required: ['title_text'],
+    },
+  },
+  {
     name: 'hubspot_company_activity',
     description: 'Get HubSpot company activity: last contacted date, recent meetings with action items, and emails awaiting a reply.',
     input_schema: {
@@ -63,7 +72,9 @@ export class Assistant {
     const system =
       'You are Riley, the project manager bot for Cybersolve. Answer the user\'s question using the tools when you need data. ' +
       'You are read-only: never claim to have changed anything. Be brief and plain, no emojis, use short bullet points. ' +
-      'If the question is unclear or no tool fits, ask one short clarifying question.';
+      'If the question is unclear or no tool fits, ask one short clarifying question. ' +
+      'When the user asks to close or mark a task done, use find_open_tasks, list the matches with their short IDs, and tell them to reply "@Riley confirm done <short ID>" to mark it done. ' +
+      'Never say a task has been marked done, because you cannot change tasks.';
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -120,6 +131,15 @@ export class Assistant {
           ? overdue.filter((t) => t.project_name?.toLowerCase().includes(input.project_name.toLowerCase()))
           : overdue;
         return summariseTasks(filtered);
+      }
+      if (name === 'find_open_tasks') {
+        const matches = await this.donezy.findOpenTasksByTitle(input.title_text);
+        return matches.map((t) => ({
+          short_id: t.id.slice(0, 8),
+          title: t.title,
+          project: t.project_name,
+          assignee: t.assigned_to,
+        }));
       }
       if (name === 'hubspot_company_activity') {
         const company = await this.hubspot.getCompanyLastContacted(input.company_name);
