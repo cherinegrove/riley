@@ -7,6 +7,10 @@ import { DonezyTask, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL } from '
 const TZ = 'Africa/Johannesburg';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+export type ReviewCategory = 'overdue' | 'due_today' | 'unassigned' | 'no_due_date' | 'external' | 'internal' | 'backlog';
+
+const normalise = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+
 const sastDate = (value: string | null | undefined): string | null => {
   if (!value) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
@@ -16,71 +20,96 @@ const sastDate = (value: string | null | undefined): string | null => {
 const formatDate = (ymd: string): string =>
   new Date(`${ymd}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: TZ });
 
-const normalise = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '');
-
 const daysSince = (iso: string, now: Date): number => Math.floor((now.getTime() - new Date(iso).getTime()) / DAY_MS);
 
-const taskLine = (task: DonezyTask, detail: string): string => `• ${task.title} – ${detail} – ${task.assigned_to}`;
+const byAssignee = (tasks: DonezyTask[]): Array<[string, DonezyTask[]]> => {
+  const groups = new Map<string, DonezyTask[]>();
+  for (const task of tasks) {
+    groups.set(task.assigned_to, [...(groups.get(task.assigned_to) ?? []), task]);
+  }
+  return [...groups.entries()];
+};
 
-export const buildReviewMessages = (projectName: string, tasks: DonezyTask[], now: Date): string[] => {
+export const buildCategoryMessage = (
+  category: ReviewCategory,
+  projectName: string,
+  tasks: DonezyTask[],
+  now: Date
+): string | null => {
   const today = sastDate(now.toISOString()) as string;
-  const weekEnd = sastDate(new Date(now.getTime() + 6 * DAY_MS).toISOString()) as string;
+  const open = tasks.filter((t) => t.status !== 'backlog');
 
-  const dueThisWeek = tasks.filter((t) => {
-    const due = sastDate(t.due_date);
-    return due !== null && due >= today && due <= weekEnd;
-  });
-  const missingDetails = tasks.filter((t) => t.assigned_to === 'Unassigned' || !t.due_date);
-  const awaitingInternal = tasks.filter((t) => t.status === DONEZY_AWAITING_INTERNAL);
-  const staleExternal = tasks.filter((t) => t.status === DONEZY_AWAITING_EXTERNAL && daysSince(t.updated_at, now) >= 7);
-  const urgentOverdue = tasks.filter((t) => t.priority === 'urgent' && (sastDate(t.due_date) ?? '9999') < today);
-
-  const sections: string[] = [];
-
-  if (dueThisWeek.length > 0) {
-    sections.push(
-      [`*${projectName}* – 📅 Due this week (${dueThisWeek.length})`, ...dueThisWeek.map((t) =>
-        taskLine(t, `due ${formatDate(sastDate(t.due_date) as string)} – ${t.status}`))].join('\n')
-    );
+  if (category === 'overdue') {
+    const list = open.filter((t) => (sastDate(t.due_date) ?? '9999') < today);
+    if (list.length === 0) return null;
+    return [
+      `ACTION REQUIRED Overdue tasks on ${projectName}`,
+      '',
+      'Please update these tasks by completing them, or leaving a comment and changing the due date.',
+      '',
+      ...list.map((t) => `• ${t.title} – ${t.days_overdue ?? 0} days overdue – ${t.assigned_to}`),
+    ].join('\n');
   }
 
-  if (missingDetails.length > 0) {
-    sections.push(
-      [`*${projectName}* – 👤 No assignee or no due date (${missingDetails.length})`, ...missingDetails.map((t) => {
-        const missing = [
-          t.assigned_to === 'Unassigned' ? 'no assignee' : null,
-          !t.due_date ? 'no due date' : null,
-        ].filter(Boolean).join(', ');
-        return `• ${t.title} – missing: ${missing}`;
-      })].join('\n')
-    );
+  if (category === 'due_today') {
+    const list = open.filter((t) => sastDate(t.due_date) === today);
+    if (list.length === 0) return null;
+    return [
+      `ACTION REQUIRED Due today – ${projectName}`,
+      '',
+      'These tasks are due today!',
+      '',
+      ...list.map((t) => `• ${t.title} – ${t.assigned_to} – ${t.status}`),
+    ].join('\n');
   }
 
-  if (awaitingInternal.length > 0) {
-    sections.push(
-      [`*${projectName}* – 🔎 Awaiting internal feedback (${awaitingInternal.length})`, ...awaitingInternal.map((t) =>
-        taskLine(t, `last updated ${daysSince(t.updated_at, now)} days ago`))].join('\n')
-    );
+  if (category === 'unassigned') {
+    const list = open.filter((t) => t.assigned_to === 'Unassigned');
+    if (list.length === 0) return null;
+    return [
+      `ACTION REQUIRED Unassigned tasks – ${projectName}`,
+      '',
+      'Please assign these tasks to the correct Consultant',
+      '',
+      ...list.map((t) => `• ${t.title} – ${t.due_date ? formatDate(sastDate(t.due_date) as string) : 'no due date'}`),
+    ].join('\n');
   }
 
-  if (staleExternal.length > 0) {
-    sections.push(
-      [
-        `*${projectName}* – ⏰ Awaiting external feedback, not updated in 7+ days (${staleExternal.length})`,
-        'Owners: please send the client a follow-up and update the task in Donezy.',
-        ...staleExternal.map((t) => taskLine(t, `last updated ${daysSince(t.updated_at, now)} days ago`)),
-      ].join('\n')
-    );
+  if (category === 'no_due_date') {
+    const list = open.filter((t) => !t.due_date);
+    if (list.length === 0) return null;
+    return [
+      `ACTION REQUIRED No due date – ${projectName}`,
+      '',
+      'Please add a due date to these tasks.',
+      '',
+      ...list.map((t) => `• ${t.title} – ${t.assigned_to}`),
+    ].join('\n');
   }
 
-  if (urgentOverdue.length > 0) {
-    sections.push(
-      [`*${projectName}* – 🚨 Urgent and overdue (${urgentOverdue.length})`, ...urgentOverdue.map((t) =>
-        taskLine(t, `${t.days_overdue ?? 0} days overdue`))].join('\n')
+  if (category === 'external' || category === 'internal') {
+    const status = category === 'external' ? DONEZY_AWAITING_EXTERNAL : DONEZY_AWAITING_INTERNAL;
+    const list = open.filter((t) => t.status === status);
+    if (list.length === 0) return null;
+    const heading = category === 'external' ? 'Awaiting external feedback' : 'Awaiting internal feedback';
+    const ask = category === 'external'
+      ? 'please follow up with the client and update the task in Donezy.'
+      : 'please follow up on these and update the task in Donezy.';
+    const groups = byAssignee(list).map(([name, group]) =>
+      [`${name}: ${ask}`, ...group.map((t) => `• ${t.title} – last updated ${daysSince(t.updated_at, now)} days ago`)].join('\n')
     );
+    return [`ACTION REQUIRED ${heading} – ${projectName}`, '', groups.join('\n\n')].join('\n');
   }
 
-  return sections.length > 0 ? sections : [`✅ *${projectName}*: nothing to review this week.`];
+  const backlog = tasks.filter((t) => t.status === 'backlog');
+  if (backlog.length === 0) return null;
+  return [
+    `ACTION REQUIRED Backlog – ${projectName}`,
+    '',
+    'Please review these backlog tasks and move them forward or close them.',
+    '',
+    ...backlog.map((t) => `• ${t.title} – ${t.assigned_to}`),
+  ].join('\n');
 };
 
 export class ProjectReview {
@@ -90,16 +119,16 @@ export class ProjectReview {
     private donezy: DonezyIntegration
   ) {}
 
-  async messagesFor(projectId: string, projectName: string): Promise<string[]> {
-    const tasks = await this.donezy.getOpenTasksForProject(projectId);
-    return buildReviewMessages(projectName, tasks, new Date());
+  async messagesFor(projectId: string, projectName: string, category: ReviewCategory): Promise<string[]> {
+    const tasks = await this.donezy.getTasksNotDoneForProject(projectId);
+    const message = buildCategoryMessage(category, projectName, tasks, new Date());
+    return message ? [message] : [];
   }
 
-  async runAll(onlyWithSpace = false): Promise<void> {
+  async runCategory(category: ReviewCategory, onlyWithSpace = false): Promise<void> {
     const projects = await this.donezy.getOpenProjects();
     const spaces = await this.store.listSpaces();
     const fallback = process.env.PROPOSAL_FALLBACK_SPACE || process.env.GOOGLE_CHAT_SPACE_ID;
-
     const spaceFor = (name: string | null) =>
       name ? spaces.find((s) => s.client_key && normalise(s.client_key) === normalise(name)) : undefined;
 
@@ -112,16 +141,27 @@ export class ProjectReview {
         continue;
       }
 
-      for (const text of await this.messagesFor(project.id, project.name)) {
+      for (const text of await this.messagesFor(project.id, project.name, category)) {
         await this.chat.postMessage(target, text);
       }
     }
   }
 
   start(): void {
-    cron.schedule('0 7 * * 1', () => {
-      this.runAll().catch((error) => console.error('[ProjectReview] Weekly review failed:', error));
-    }, { timezone: TZ });
-    console.log('[ProjectReview] Weekly project review scheduled for Mondays 7am SAST');
+    const schedules: Array<{ expression: string; category: ReviewCategory }> = [
+      { expression: '0 7 * * *', category: 'overdue' },
+      { expression: '0 10 * * *', category: 'due_today' },
+      { expression: '0 12 * * *', category: 'unassigned' },
+      { expression: '0 12 * * *', category: 'no_due_date' },
+      { expression: '0 8 * * 1', category: 'external' },
+      { expression: '0 8 * * 5', category: 'internal' },
+      { expression: '0 12 * * 5', category: 'backlog' },
+    ];
+    for (const { expression, category } of schedules) {
+      cron.schedule(expression, () => {
+        this.runCategory(category).catch((error) => console.error(`[ProjectReview] ${category} failed:`, error));
+      }, { timezone: TZ });
+    }
+    console.log('[ProjectReview] Project review schedules started (SAST)');
   }
 }

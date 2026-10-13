@@ -234,13 +234,13 @@ export class DonezyIntegration {
     }));
   }
 
-  async getOpenTasksForProject(projectId: string): Promise<DonezyTask[]> {
+  async getTasksNotDoneForProject(projectId: string): Promise<DonezyTask[]> {
     await this.loadProjectNames();
     const { data, error } = await this.supabase
       .from('tasks_with_assignees')
       .select('*')
       .eq('project_id', projectId)
-      .not('status', 'in', `(${DONEZY_CLOSED_STATUSES.join(',')})`);
+      .neq('status', 'done');
     if (error) {
       console.error('[Donezy] Failed to load project tasks:', error.message);
       return [];

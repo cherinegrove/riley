@@ -11,7 +11,7 @@ import { createRileyStore } from './integrations/riley-store';
 import { MeetingCandidate, MeetingTrigger } from './riley/meeting-trigger';
 import { ProposalService } from './riley/proposals';
 import { ApprovalService } from './riley/approvals';
-import { ProjectReview } from './riley/project-review';
+import { ProjectReview, ReviewCategory } from './riley/project-review';
 import { GoogleChatMessage, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL } from './utils/types';
 
 const app: Express = express();
@@ -39,7 +39,7 @@ const approvals = new ApprovalService(rileyStore, donezy);
 const meetingTrigger = new MeetingTrigger(config.vribble.url, config.vribble.key, rileyStore, (candidate: MeetingCandidate) =>
   proposals.propose(candidate)
 );
-meetingTrigger.start(5 * 60 * 1000);
+meetingTrigger.start(30 * 60 * 1000);
 const projectReview = new ProjectReview(rileyStore, googleChat, donezy);
 projectReview.start();
 
@@ -401,18 +401,14 @@ app.post('/test/repost-proposal/:meetingId', async (req: Request, res: Response)
   res.status(200).json({ posted, space: candidate.space_name, items: candidate.actionItems.length });
 });
 
-app.post('/test/resend-project-reviews', async (_req: Request, res: Response): Promise<void> => {
-  await projectReview.runAll(true);
-  res.status(200).json({ done: true });
-});
-
 app.post('/test/project-review/:projectId', async (req: Request, res: Response): Promise<void> => {
   const project = (await donezy.getOpenProjects()).find((p) => p.id === req.params.projectId);
   if (!project) {
     res.status(404).json({ error: 'no open project with that id' });
     return;
   }
-  const messages = await projectReview.messagesFor(project.id, project.name);
+  const category = (req.query.category as ReviewCategory) || 'overdue';
+  const messages = await projectReview.messagesFor(project.id, project.name, category);
   if (req.query.post === 'true') {
     const target = process.env.PROPOSAL_FALLBACK_SPACE || process.env.GOOGLE_CHAT_SPACE_ID || '';
     for (const text of messages) {
