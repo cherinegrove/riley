@@ -19,12 +19,13 @@ export const parseApproval = (text: string): ApproveCommand | null => {
   if (rest === 'all') return { kind: 'approve', numbers: 'all' };
   if (rest === '') return { kind: 'approve', numbers: [] };
 
-  const numbers = rest.split(/[\s,]+/).map(Number);
+  const numbers = rest.split(/[\s,]+/).filter((part) => part !== '').map(Number);
+  if (numbers.length === 0) return { kind: 'approve', numbers: [] };
   if (numbers.some((n) => !Number.isInteger(n) || n <= 0)) return null;
   return { kind: 'approve', numbers };
 };
 
-const CLIENT_LINE = /^\s*client\s+(.+)$/im;
+const CLIENT_LINE = /^\s*(?:(?:please\s+)?(?:put|file)\s+(?:this|these|it)\s+under\s+(?:client\s+)?|client\s+)(.+)$/im;
 
 export class ApprovalService {
   constructor(private store: RileyStore, private donezy: DonezyIntegration) {}
