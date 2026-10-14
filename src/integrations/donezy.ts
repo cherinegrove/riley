@@ -248,6 +248,24 @@ export class DonezyIntegration {
     return ((data || []) as any[]).map((row) => this.mapRowToTask(row));
   }
 
+  async getLastCommentDates(taskIds: string[]): Promise<Map<string, string>> {
+    const latest = new Map<string, string>();
+    if (taskIds.length === 0) return latest;
+    const { data, error } = await this.supabase
+      .from('comments')
+      .select('task_id, created_at')
+      .in('task_id', taskIds)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error('[Donezy] Failed to load comment dates:', error.message);
+      return latest;
+    }
+    for (const row of (data || []) as any[]) {
+      if (!latest.has(row.task_id)) latest.set(row.task_id, row.created_at);
+    }
+    return latest;
+  }
+
   async getTasksByStatus(status: string, projectName?: string): Promise<DonezyTask[]> {
     await this.loadProjectNames();
     const { data, error } = await this.supabase

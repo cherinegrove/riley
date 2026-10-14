@@ -1,6 +1,6 @@
 import { DonezyIntegration } from '../integrations/donezy';
 import { HubSpotIntegration } from '../integrations/hubspot';
-import { DonezyTask } from '../utils/types';
+import { DonezyTask, donezyTaskUrl } from '../utils/types';
 
 const MODEL = 'claude-haiku-4-5-20251001';
 const MAX_ROUNDS = 4;
@@ -85,6 +85,7 @@ export class Assistant {
       'You are Riley, the project manager bot for Cybersolve. Answer the user\'s question using the tools when you need data. ' +
       'You are read-only: never claim to have changed anything. Be brief and plain, no emojis, use short bullet points. ' +
       'If the question is unclear or no tool fits, ask one short clarifying question. ' +
+      'When you mention a task, include its url. For tasks awaiting internal or external feedback, state the last_comment date (or say there are no comments yet). ' +
       'When the user asks to close or mark a task done, use find_open_tasks, list the matches with their short IDs, and tell them to reply "@Riley confirm done <short ID>" to mark it done. ' +
       'Never say a task has been marked done, because you cannot change tasks.';
 
@@ -125,33 +126,40 @@ export class Assistant {
     return 'That took too many steps to answer. Try asking about one client or person at a time.';
   }
 
+  private async enrich(tasks: DonezyTask[]) {
+    const lastComments = await this.donezy.getLastCommentDates(tasks.slice(0, MAX_ITEMS).map((t) => t.id));
+    return summariseTasks(tasks, lastComments);
+  }
+
   private async runTool(name: string, input: ToolInput): Promise<unknown> {
     try {
       if (name === 'client_open_tasks') {
-        return summariseTasks(await this.donezy.getTasksByClientName(input.client_name));
+        return this.enrich(await this.donezy.getTasksByClientName(input.client_name));
       }
       if (name === 'at_risk_tasks') {
         const byAssignee = await this.donezy.getAllRiskTasksGroupedByAssignee();
         const wanted = input.name.trim().toLowerCase();
         const person = Object.entries(byAssignee).find(([assignee]) => assignee.toLowerCase() === wanted);
-        if (person) return { person: person[0], tasks: summariseTasks(person[1]) };
-        return { project_or_client: input.name, tasks: summariseTasks(await this.donezy.getTasksByClientName(input.name)).filter((t) => t.at_risk) };
+        if (person) return { person: person[0], tasks: await this.enrich(person[1]) };
+        const clientTasks = await this.enrich(await this.donezy.getTasksByClientName(input.name));
+        return { project_or_client: input.name, tasks: clientTasks.filter((t) => t.at_risk) };
       }
       if (name === 'overdue_tasks') {
         const overdue = await this.donezy.getOverdueTasks();
         const filtered = input.project_name
           ? overdue.filter((t) => t.project_name?.toLowerCase().includes(input.project_name.toLowerCase()))
           : overdue;
-        return summariseTasks(filtered);
+        return this.enrich(filtered);
       }
       if (name === 'tasks_by_status') {
         const tasks = await this.donezy.getTasksByStatus(input.status, input.project_name);
-        return summariseTasks(tasks);
+        return this.enrich(tasks);
       }
       if (name === 'find_open_tasks') {
         const matches = await this.donezy.findOpenTasksByTitle(input.title_text);
         return matches.map((t) => ({
           short_id: t.id.slice(0, 8),
+          url: donezyTaskUrl(t.id),
           title: t.title,
           project: t.project_name,
           assignee: t.assigned_to,
@@ -172,12 +180,15 @@ export class Assistant {
   }
 }
 
-const summariseTasks = (tasks: DonezyTask[]) => {
+const summariseTasks = (tasks: DonezyTask[], lastComments: Map<string, string>) => {
   const now = Date.now();
   return tasks.slice(0, MAX_ITEMS).map((t) => {
     const updatedDays = Math.floor((now - new Date(t.updated_at).getTime()) / DAY_MS);
     const overdue = (t.days_overdue ?? 0) > 0;
+    const lastComment = lastComments.get(t.id);
     return {
+      url: donezyTaskUrl(t.id),
+      last_comment: lastComment ? lastComment.slice(0, 10) : null,
       title: t.title,
       project: t.project_name,
       status: t.status,

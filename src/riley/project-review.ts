@@ -2,7 +2,7 @@ import * as cron from 'node-cron';
 import { DonezyIntegration } from '../integrations/donezy';
 import { GoogleChatIntegration } from '../integrations/google-chat';
 import { RileyStore } from '../integrations/riley-store';
-import { DonezyTask, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL } from '../utils/types';
+import { DonezyTask, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL, donezyTaskUrl } from '../utils/types';
 
 const TZ = 'Africa/Johannesburg';
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -22,6 +22,9 @@ const formatDate = (ymd: string): string =>
 
 const daysSince = (iso: string, now: Date): number => Math.floor((now.getTime() - new Date(iso).getTime()) / DAY_MS);
 
+const taskLine = (task: DonezyTask, detail: string): string =>
+  `• ${task.title} – ${detail}\n  ${donezyTaskUrl(task.id)}`;
+
 const byAssignee = (tasks: DonezyTask[]): Array<[string, DonezyTask[]]> => {
   const groups = new Map<string, DonezyTask[]>();
   for (const task of tasks) {
@@ -34,7 +37,8 @@ export const buildCategoryMessage = (
   category: ReviewCategory,
   projectName: string,
   tasks: DonezyTask[],
-  now: Date
+  now: Date,
+  lastComments: Map<string, string> = new Map()
 ): string | null => {
   const today = sastDate(now.toISOString()) as string;
   const open = tasks.filter((t) => t.status !== 'backlog');
@@ -47,7 +51,7 @@ export const buildCategoryMessage = (
       '',
       'Please update these tasks by completing them, or leaving a comment and changing the due date.',
       '',
-      ...list.map((t) => `• ${t.title} – ${t.days_overdue ?? 0} days overdue – ${t.assigned_to}`),
+      ...list.map((t) => taskLine(t, `${t.days_overdue ?? 0} days overdue – ${t.assigned_to}`)),
     ].join('\n');
   }
 
@@ -59,7 +63,7 @@ export const buildCategoryMessage = (
       '',
       'These tasks are due today!',
       '',
-      ...list.map((t) => `• ${t.title} – ${t.assigned_to} – ${t.status}`),
+      ...list.map((t) => taskLine(t, `${t.assigned_to} – ${t.status}`)),
     ].join('\n');
   }
 
@@ -71,7 +75,7 @@ export const buildCategoryMessage = (
       '',
       'Please assign these tasks to the correct Consultant',
       '',
-      ...list.map((t) => `• ${t.title} – ${t.due_date ? formatDate(sastDate(t.due_date) as string) : 'no due date'}`),
+      ...list.map((t) => taskLine(t, t.due_date ? formatDate(sastDate(t.due_date) as string) : 'no due date')),
     ].join('\n');
   }
 
@@ -83,7 +87,7 @@ export const buildCategoryMessage = (
       '',
       'Please add a due date to these tasks.',
       '',
-      ...list.map((t) => `• ${t.title} – ${t.assigned_to}`),
+      ...list.map((t) => taskLine(t, t.assigned_to)),
     ].join('\n');
   }
 
@@ -96,7 +100,16 @@ export const buildCategoryMessage = (
       ? 'please follow up with the client and update the task in Donezy.'
       : 'please follow up on these and update the task in Donezy.';
     const groups = byAssignee(list).map(([name, group]) =>
-      [`${name}: ${ask}`, ...group.map((t) => `• ${t.title} – last updated ${daysSince(t.updated_at, now)} days ago`)].join('\n')
+      [
+        `${name}: ${ask}`,
+        ...group.map((t) => {
+          const last = lastComments.get(t.id);
+          const commentText = last
+            ? `last comment ${formatDate(sastDate(last) as string)} (${daysSince(last, now)} days ago)`
+            : 'no comments yet';
+          return taskLine(t, `${commentText}, last updated ${daysSince(t.updated_at, now)} days ago`);
+        }),
+      ].join('\n')
     );
     return [`ACTION REQUIRED ${heading} – ${projectName}`, '', groups.join('\n\n')].join('\n');
   }
@@ -108,7 +121,7 @@ export const buildCategoryMessage = (
     '',
     'Please review these backlog tasks and move them forward or close them.',
     '',
-    ...backlog.map((t) => `• ${t.title} – ${t.assigned_to}`),
+    ...backlog.map((t) => taskLine(t, t.assigned_to)),
   ].join('\n');
 };
 
@@ -121,7 +134,10 @@ export class ProjectReview {
 
   async messagesFor(projectId: string, projectName: string, category: ReviewCategory): Promise<string[]> {
     const tasks = await this.donezy.getTasksNotDoneForProject(projectId);
-    const message = buildCategoryMessage(category, projectName, tasks, new Date());
+    const lastComments = category === 'external' || category === 'internal'
+      ? await this.donezy.getLastCommentDates(tasks.map((t) => t.id))
+      : new Map<string, string>();
+    const message = buildCategoryMessage(category, projectName, tasks, new Date(), lastComments);
     return message ? [message] : [];
   }
 

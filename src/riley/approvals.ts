@@ -1,5 +1,6 @@
 import { DonezyIntegration } from '../integrations/donezy';
 import { PendingProposal, RileyStore } from '../integrations/riley-store';
+import { donezyTaskUrl } from '../utils/types';
 
 const APPROVER_EMAIL = 'cherine@cybersolve.net';
 const CREATOR_DONEZY_USER_ID = 'c5186049-990e-43c5-847a-c5bf0bc46220';
@@ -123,14 +124,14 @@ export class ApprovalService {
         return `I couldn't find one open task with the ID ${confirm[1]}. Ask me to mark it done again to get the current ID.`;
       }
       await this.donezy.markTaskDone(task.id);
-      return `Marked "${task.title}" as done in ${task.project_name}.`;
+      return `Marked "${task.title}" as done in ${task.project_name}.\n${donezyTaskUrl(task.id)}`;
     }
 
     const matches = await this.donezy.findOpenTasksByTitle(mark![1]);
     if (matches.length === 0) {
       return `I couldn't find an open task matching "${mark![1]}".`;
     }
-    const lines = matches.map((t) => `• ${t.title} – ${t.project_name} – ${t.assigned_to} (ID ${t.id.slice(0, 8)})`);
+    const lines = matches.map((t) => `• ${t.title} – ${t.project_name} – ${t.assigned_to} (ID ${t.id.slice(0, 8)})\n  ${donezyTaskUrl(t.id)}`);
     if (matches.length === 1) {
       return `Found one open task:\n${lines[0]}\nReply \`confirm done ${matches[0].id.slice(0, 8)}\` to mark it done.`;
     }
