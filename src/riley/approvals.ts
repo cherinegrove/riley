@@ -2,8 +2,8 @@ import { DonezyIntegration } from '../integrations/donezy';
 import { PendingProposal, RileyStore } from '../integrations/riley-store';
 import { donezyTaskUrl } from '../utils/types';
 
-const APPROVER_EMAIL = 'cherine@cybersolve.net';
-const CREATOR_DONEZY_USER_ID = 'c5186049-990e-43c5-847a-c5bf0bc46220';
+export const APPROVER_EMAIL = 'cherine@cybersolve.net';
+export const CREATOR_DONEZY_USER_ID = 'c5186049-990e-43c5-847a-c5bf0bc46220';
 
 export type ApproveCommand = { kind: 'decline' } | { kind: 'approve'; numbers: number[] | 'all' };
 
@@ -153,9 +153,7 @@ export class ApprovalService {
       .split('\n')
       .map((line) => line.match(/^\s*\d+[.)]\s+(.+)$/)?.[1].trim())
       .filter((title): title is string => !!title);
-    if (titles.length === 0) {
-      return 'Add the tasks as numbered lines, e.g. "Please create these tasks under Sourcefin" then "1. Task name".';
-    }
+    if (titles.length === 0) return null;
 
     const project = await this.donezy.findOpenProjectForClient(target);
     if ('error' in project) {

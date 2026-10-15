@@ -1,8 +1,44 @@
 import { DonezyIntegration } from '../integrations/donezy';
 import { HubSpotIntegration } from '../integrations/hubspot';
 import { DonezyTask, donezyTaskUrl } from '../utils/types';
+import { CREATOR_DONEZY_USER_ID } from './approvals';
 
 const MODEL = 'claude-haiku-4-5-20251001';
+
+const CREATE_TOOL = {
+  name: 'create_task',
+  description: 'Create a Donezy task. Only call this when the title and the client or project are clear. If anything is unclear, ask the user a short question instead. Status is one of: todo, in-progress, review, awaiting-ext (awaiting external feedback), awaiting-feedback-(internal) (awaiting internal feedback), backlog. Default todo.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      title: { type: 'string' },
+      project_or_client: { type: 'string', description: 'Client name or open project name, e.g. Unitas Funding or Stratasys Direct' },
+      status: { type: 'string' },
+      assignee: { type: 'string', description: 'Full or first name of the Donezy user' },
+      due_date: { type: 'string', description: 'YYYY-MM-DD' },
+      description: { type: 'string' },
+    },
+    required: ['title', 'project_or_client'],
+  },
+};
+
+const STATUS_ALIASES: Record<string, string> = {
+  todo: 'todo',
+  'to do': 'todo',
+  'in progress': 'in-progress',
+  'in-progress': 'in-progress',
+  review: 'review',
+  backlog: 'backlog',
+  'awaiting external': 'awaiting-ext',
+  'awaiting external feedback': 'awaiting-ext',
+  'awaiting-ext': 'awaiting-ext',
+  'awaiting internal': 'awaiting-feedback-(internal)',
+  'awaiting internal feedback': 'awaiting-feedback-(internal)',
+  'awaiting-feedback-(internal)': 'awaiting-feedback-(internal)',
+};
+
+const normaliseStatus = (value: string | undefined): string =>
+  (value && STATUS_ALIASES[value.trim().toLowerCase()]) || 'todo';
 const MAX_ROUNDS = 4;
 const MAX_ITEMS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -79,15 +115,19 @@ export class Assistant {
     return !!this.apiKey;
   }
 
-  async answer(question: string): Promise<string> {
+  async answer(question: string, allowWrites: boolean): Promise<string> {
     const messages: Array<{ role: 'user' | 'assistant'; content: unknown }> = [{ role: 'user', content: question }];
+    const tools = allowWrites ? [...TOOLS, CREATE_TOOL] : TOOLS;
     const system =
       'You are Riley, the project manager bot for Cybersolve. Answer the user\'s question using the tools when you need data. ' +
       'You are read-only: never claim to have changed anything. Be brief and plain, no emojis, use short bullet points. ' +
       'If the question is unclear or no tool fits, ask one short clarifying question. ' +
       'When you mention a task, include its url. For tasks awaiting internal or external feedback, state the last_comment date (or say there are no comments yet). ' +
       'When the user asks to close or mark a task done, use find_open_tasks, list the matches with their short IDs, and tell them to reply "@Riley confirm done <short ID>" to mark it done. ' +
-      'Never say a task has been marked done, because you cannot change tasks.';
+      'Never say a task has been marked done, because you cannot change tasks. ' +
+      'If the user asks you to create a task, use create_task only when the title and client or project are clear. ' +
+      'If the client, title, or assignee is unclear, ask one short question such as "Which client should this go under?" instead of creating it. ' +
+      'After creating a task, reply with its title, project, status, and url.';
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -97,7 +137,7 @@ export class Assistant {
           'x-api-key': this.apiKey as string,
           'anthropic-version': '2023-06-01',
         },
-        body: JSON.stringify({ model: MODEL, max_tokens: 800, system, tools: TOOLS, messages }),
+        body: JSON.stringify({ model: MODEL, max_tokens: 800, system, tools, messages }),
       });
       if (!response.ok) {
         console.error('[Assistant] Anthropic error:', response.status, await response.text());
@@ -117,7 +157,7 @@ export class Assistant {
       messages.push({ role: 'assistant', content: body.content });
       const results = [];
       for (const block of body.content.filter((b) => b.type === 'tool_use')) {
-        const output = await this.runTool(block.name as string, block.input ?? {});
+        const output = await this.runTool(block.name as string, block.input ?? {}, allowWrites);
         results.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(output) });
       }
       messages.push({ role: 'user', content: results });
@@ -131,8 +171,28 @@ export class Assistant {
     return summariseTasks(tasks, lastComments);
   }
 
-  private async runTool(name: string, input: ToolInput): Promise<unknown> {
+  private async runTool(name: string, input: ToolInput, allowWrites: boolean): Promise<unknown> {
     try {
+      if (name === 'create_task') {
+        if (!allowWrites) return { error: 'only the approver can create tasks' };
+        const project = await this.donezy.findOpenProjectForClient(input.project_or_client);
+        if ('error' in project) return { error: project.error };
+        let assigneeId: string | null = null;
+        if (input.assignee) {
+          assigneeId = await this.donezy.getAssigneeIdByName(input.assignee);
+          if (!assigneeId) return { error: `no Donezy user matches "${input.assignee}"` };
+        }
+        const created = await this.donezy.createTask({
+          title: input.title,
+          description: input.description || 'Created from Riley chat',
+          project_id: project.id,
+          creator_id: CREATOR_DONEZY_USER_ID,
+          assignee_id: assigneeId,
+          status: normaliseStatus(input.status),
+          due_date: input.due_date || null,
+        });
+        return { created: true, title: input.title, project: project.name, url: donezyTaskUrl(created?.id ?? '') };
+      }
       if (name === 'client_open_tasks') {
         return this.enrich(await this.donezy.getTasksByClientName(input.client_name));
       }

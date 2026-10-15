@@ -13,6 +13,7 @@ import { ProposalService } from './riley/proposals';
 import { ApprovalService } from './riley/approvals';
 import { ProjectReview, ReviewCategory } from './riley/project-review';
 import { Assistant } from './riley/assistant';
+import { APPROVER_EMAIL } from './riley/approvals';
 import { GoogleChatMessage, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL } from './utils/types';
 
 const app: Express = express();
@@ -240,7 +241,8 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
     logger.info(`Parsed query: ${query.type}`, { query });
 
     if (query.type === 'unknown' && assistant.enabled) {
-      const answer = await assistant.answer(parsed.text.replace(/@riley\b/i, '').trim());
+      const isApprover = parsed.userEmail?.toLowerCase() === APPROVER_EMAIL;
+      const answer = await assistant.answer(parsed.text.replace(/@riley\b/i, '').trim(), isApprover);
       const replyThread = payload.message?.thread?.name;
       await googleChat.sendMessage(payload.message?.space?.name || '', {
         text: answer,

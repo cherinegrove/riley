@@ -349,6 +349,8 @@ export class DonezyIntegration {
     project_id: string;
     creator_id: string;
     assignee_id: string | null;
+    status?: string;
+    due_date?: string | null;
   }): Promise<{ id: string } | null> {
     const { data, error } = await this.supabase
       .from('tasks')
@@ -358,8 +360,9 @@ export class DonezyIntegration {
         project_id: input.project_id,
         auth_user_id: input.creator_id,
         assignee_id: input.assignee_id,
-        status: 'todo',
+        status: input.status ?? 'todo',
         priority: 'medium',
+        due_date: input.due_date ?? null,
       } as any)
       .select('id')
       .single();
