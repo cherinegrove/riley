@@ -185,6 +185,10 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
       return;
     }
 
+    if (parsed.userId && parsed.userEmail) {
+      await rileyStore.recordChatUser(parsed.userId, parsed.userEmail, parsed.userName);
+    }
+
     // Check if Riley is mentioned
     const isMentioned = parser.isRileyMention(parsed.text);
     logger.info('Riley mention check', { text: parsed.text, isMentioned });

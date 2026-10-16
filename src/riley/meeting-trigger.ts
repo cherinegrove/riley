@@ -14,6 +14,7 @@ export interface ParsedActionItem {
 
 export interface MeetingCandidate extends ProcessedMeeting {
   actionItems: ParsedActionItem[];
+  attendees: string[];
 }
 
 type MeetingRow = {
@@ -154,6 +155,7 @@ export class MeetingTrigger {
         space_name: space?.space_name ?? null,
         status,
         actionItems: parseActionItems(meeting.action_items || []),
+        attendees: meeting.attendees || [],
       };
 
       if (record) {
@@ -199,6 +201,7 @@ export class MeetingTrigger {
       space_name: match.space?.space_name ?? null,
       status: match.status,
       actionItems: parseActionItems(meeting.action_items || []),
+      attendees: meeting.attendees || [],
     };
   }
 

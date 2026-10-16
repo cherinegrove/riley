@@ -54,6 +54,39 @@ export class RileyStore {
     }
   }
 
+  async recordChatUser(userName: string, email: string, displayName: string | undefined): Promise<void> {
+    if (!this.supabase || !userName || !email) return;
+    const { error } = await this.supabase.from('chat_users').upsert(
+      {
+        user_name: userName,
+        email: email.toLowerCase(),
+        display_name: displayName ?? null,
+        last_seen_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_name' }
+    );
+    if (error) {
+      console.error('[RileyStore] Failed to record chat user:', error.message);
+    }
+  }
+
+  async chatUsersByEmail(emails: string[]): Promise<Map<string, { user_name: string; display_name: string | null }>> {
+    const found = new Map<string, { user_name: string; display_name: string | null }>();
+    if (!this.supabase || emails.length === 0) return found;
+    const { data, error } = await this.supabase
+      .from('chat_users')
+      .select('user_name, email, display_name')
+      .in('email', emails.map((e) => e.toLowerCase()));
+    if (error) {
+      console.error('[RileyStore] Failed to look up chat users:', error.message);
+      return found;
+    }
+    for (const row of (data || []) as Array<{ user_name: string; email: string; display_name: string | null }>) {
+      found.set(row.email, { user_name: row.user_name, display_name: row.display_name });
+    }
+    return found;
+  }
+
   async listSpaces(): Promise<ChatSpace[]> {
     if (!this.supabase) return [];
     const { data, error } = await this.supabase.from('chat_spaces').select('space_name, display_name, client_key');

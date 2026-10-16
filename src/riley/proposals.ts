@@ -27,7 +27,13 @@ export const findExistingTask = (title: string, openTasks: DonezyTask[]): Donezy
   );
 };
 
-export const buildProposalText = (meetingTitle: string, items: ProposalItem[], clientMatched: boolean): string => {
+export const buildProposalText = (
+  meetingTitle: string,
+  items: ProposalItem[],
+  clientMatched: boolean,
+  clientName: string | null,
+  attendeeTags: string[]
+): string => {
   const lines = items.map((item) => {
     const detail = item.task && item.task !== item.title ? ` - ${item.task}` : '';
     const assignee = item.assignee ? ` [${item.assignee}]` : '';
@@ -35,12 +41,15 @@ export const buildProposalText = (meetingTitle: string, items: ProposalItem[], c
     return `${item.number}. *${item.title}*${detail}${assignee}${status}`;
   });
 
-  const heading = `*Action Items from "${meetingTitle}"*`;
+  const heading = clientMatched && clientName
+    ? `*Action Items for ${clientName}*\nMeeting: "${meetingTitle}"`
+    : `*Action Items from "${meetingTitle}"*`;
+  const attendees = attendeeTags.length > 0 ? [`Attendees: ${attendeeTags.join(' ')}`] : [];
   const body = clientMatched
     ? `Items marked (new) are not in Donezy yet. Please reply in this thread with the numbers to create, e.g. \`yes 1,3\`. Expires in ${EXPIRY_HOURS} hours.`
     : `I couldn't match this meeting to a client, so please tell me which one it belongs to.\nReply \`client <name>\` in this thread (e.g. \`client Sourcefin\`), then reply with the numbers to create, e.g. \`yes 1,3\`. Expires in ${EXPIRY_HOURS} hours.`;
 
-  return [heading, '', body, '', ...lines, ''].join('\n');
+  return [heading, ...attendees, '', body, '', ...lines, ''].join('\n');
 };
 
 export class ProposalService {
@@ -72,7 +81,20 @@ export class ProposalService {
       existing_task: findExistingTask(item.title, openTasks)?.title ?? null,
     }));
 
-    const posted = await this.chat.postMessage(target, buildProposalText(candidate.title, items, clientMatched));
+    const spaces = await this.store.listSpaces();
+    const clientName = clientMatched
+      ? spaces.find((s) => s.space_name === candidate.space_name)?.display_name ?? candidate.client_key
+      : null;
+    const chatUsers = await this.store.chatUsersByEmail(candidate.attendees);
+    const attendeeTags = candidate.attendees
+      .map((email) => chatUsers.get(email.toLowerCase())?.user_name)
+      .filter((name): name is string => !!name)
+      .map((name) => `<${name}>`);
+
+    const posted = await this.chat.postMessage(
+      target,
+      buildProposalText(candidate.title, items, clientMatched, clientName, attendeeTags)
+    );
     if (!posted) return false;
 
     await this.store.saveProposal({
