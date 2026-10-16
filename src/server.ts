@@ -14,6 +14,7 @@ import { ApprovalService } from './riley/approvals';
 import { ProjectReview, ReviewCategory } from './riley/project-review';
 import { Assistant } from './riley/assistant';
 import { APPROVER_EMAIL } from './riley/approvals';
+import { mentionizeText } from './riley/mentions';
 import { GoogleChatMessage, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL } from './utils/types';
 
 const app: Express = express();
@@ -449,8 +450,9 @@ app.post('/test/project-review/:projectId', async (req: Request, res: Response):
   const messages = await projectReview.messagesFor(project.id, project.name, category);
   if (req.query.post === 'true') {
     const target = process.env.PROPOSAL_FALLBACK_SPACE || process.env.GOOGLE_CHAT_SPACE_ID || '';
+    const members = await googleChat.listSpaceMembers(target);
     for (const text of messages) {
-      await googleChat.postMessage(target, text);
+      await googleChat.postMessage(target, mentionizeText(text, members));
     }
   }
   res.status(200).json({ project: project.name, messages });
