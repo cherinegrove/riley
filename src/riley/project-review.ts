@@ -33,12 +33,12 @@ const byAssignee = (tasks: DonezyTask[]): Array<[string, DonezyTask[]]> => {
   return [...groups.entries()];
 };
 
-export const buildCategoryMessage = (
+const buildCategoryBody = (
   category: ReviewCategory,
   projectName: string,
   tasks: DonezyTask[],
   now: Date,
-  lastComments: Map<string, string> = new Map()
+  lastComments: Map<string, string>
 ): string | null => {
   const today = sastDate(now.toISOString()) as string;
   const open = tasks.filter((t) => t.status !== 'backlog');
@@ -123,6 +123,27 @@ export const buildCategoryMessage = (
     '',
     ...backlog.map((t) => taskLine(t, t.assigned_to)),
   ].join('\n');
+};
+
+const CATEGORY_LABELS: Record<ReviewCategory, string> = {
+  overdue: '[OVERDUE]',
+  due_today: '[DUE TODAY]',
+  unassigned: '[UNASSIGNED]',
+  no_due_date: '[NO DUE DATE]',
+  external: '[AWAITING EXTERNAL]',
+  internal: '[AWAITING INTERNAL]',
+  backlog: '[BACKLOG]',
+};
+
+export const buildCategoryMessage = (
+  category: ReviewCategory,
+  projectName: string,
+  tasks: DonezyTask[],
+  now: Date,
+  lastComments: Map<string, string> = new Map()
+): string | null => {
+  const body = buildCategoryBody(category, projectName, tasks, now, lastComments);
+  return body ? `${CATEGORY_LABELS[category]}\n${body}` : null;
 };
 
 export class ProjectReview {

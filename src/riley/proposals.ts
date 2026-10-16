@@ -49,7 +49,7 @@ export const buildProposalText = (
     ? `Items marked (new) are not in Donezy yet. Please reply in this thread with the numbers to create, e.g. \`yes 1,3\`. Expires in ${EXPIRY_HOURS} hours.`
     : `I couldn't match this meeting to a client, so please tell me which one it belongs to.\nReply \`client <name>\` in this thread (e.g. \`client Sourcefin\`), then reply with the numbers to create, e.g. \`yes 1,3\`. Expires in ${EXPIRY_HOURS} hours.`;
 
-  return [heading, ...attendees, '', body, '', ...lines, ''].join('\n');
+  return ['[MEETING ACTIONS]', heading, ...attendees, '', body, '', ...lines, ''].join('\n');
 };
 
 export class ProposalService {
