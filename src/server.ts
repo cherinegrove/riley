@@ -185,6 +185,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
       return;
     }
 
+    logger.info('Sender', { userId: parsed.userId, userEmail: parsed.userEmail, userName: parsed.userName });
     if (parsed.userId && parsed.userEmail) {
       await rileyStore.recordChatUser(parsed.userId, parsed.userEmail, parsed.userName);
     }
