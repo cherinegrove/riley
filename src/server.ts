@@ -9,7 +9,7 @@ import { createLogger } from './riley/logger';
 import { createDailyDigest } from './riley/daily-digest';
 import { createRileyStore } from './integrations/riley-store';
 import { MeetingCandidate, MeetingTrigger } from './riley/meeting-trigger';
-import { ProposalService } from './riley/proposals';
+import { ProposalService, buildProposalText } from './riley/proposals';
 import { ApprovalService } from './riley/approvals';
 import { ProjectReview, ReviewCategory } from './riley/project-review';
 import { Assistant } from './riley/assistant';
@@ -457,6 +457,21 @@ app.post('/test/project-review/:projectId', async (req: Request, res: Response):
     }
   }
   res.status(200).json({ project: project.name, messages });
+});
+
+app.post('/test/sample-proposal', async (_req: Request, res: Response): Promise<void> => {
+  const text = buildProposalText(
+    'Sample meeting',
+    [
+      { number: 1, title: 'Send campaign list video', task: 'Send Heather a quick video on the campaign list', assignee: 'Cherine Grove', existing_task: null },
+      { number: 2, title: 'Update firewall records', task: 'Update firewall and routing records', assignee: 'Jordan Morgan', existing_task: null },
+    ],
+    true,
+    'Sample Client',
+    ['<users/111111111111111111111>', '<users/222222222222222222222>']
+  );
+  await googleChat.postMessage(process.env.GOOGLE_CHAT_SPACE_ID || '', text);
+  res.status(200).json({ posted: true });
 });
 
 app.post('/test/meeting-proposal', async (_req: Request, res: Response): Promise<void> => {
