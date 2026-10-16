@@ -2,9 +2,17 @@ import axios, { AxiosInstance } from 'axios';
 import { GoogleChatMessage, RileyResponse } from '../utils/types';
 import { getJWTAuth } from '../utils/jwt-auth';
 
+export interface SpaceMember {
+  userName: string;
+  displayName: string;
+}
+
+const MEMBER_CACHE_MS = 10 * 60 * 1000;
+
 export class GoogleChatIntegration {
   private client: AxiosInstance;
   private jwtAuth = getJWTAuth();
+  private memberCache = new Map<string, { at: number; members: SpaceMember[] }>();
 
   constructor() {
     // Base client without auth - auth added per-request
@@ -50,6 +58,37 @@ export class GoogleChatIntegration {
     } catch (error) {
       console.error('Error sending message to Google Chat:', error);
       return false;
+    }
+  }
+
+  async listSpaceMembers(spaceName: string): Promise<SpaceMember[]> {
+    const cached = this.memberCache.get(spaceName);
+    if (cached && Date.now() - cached.at < MEMBER_CACHE_MS) return cached.members;
+
+    try {
+      const cleanSpaceName = spaceName.startsWith('spaces/') ? spaceName : `spaces/${spaceName}`;
+      const token = await this.jwtAuth.getAccessToken();
+      const members: SpaceMember[] = [];
+      let pageToken: string | undefined;
+      do {
+        const { data } = await this.client.get(`/${cleanSpaceName}/members`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+          params: { pageSize: 1000, pageToken },
+        });
+        for (const membership of data.memberships || []) {
+          const member = membership.member;
+          if (member?.type !== 'BOT' && member?.name && member?.displayName) {
+            members.push({ userName: member.name, displayName: member.displayName });
+          }
+        }
+        pageToken = data.nextPageToken;
+      } while (pageToken);
+
+      this.memberCache.set(spaceName, { at: Date.now(), members });
+      return members;
+    } catch (error) {
+      console.error('Error listing Google Chat space members:', error);
+      return [];
     }
   }
 

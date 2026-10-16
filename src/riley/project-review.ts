@@ -3,6 +3,7 @@ import { DonezyIntegration } from '../integrations/donezy';
 import { GoogleChatIntegration } from '../integrations/google-chat';
 import { RileyStore } from '../integrations/riley-store';
 import { DonezyTask, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL, donezyTaskUrl } from '../utils/types';
+import { mentionizeText } from './mentions';
 
 const TZ = 'Africa/Johannesburg';
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -178,8 +179,9 @@ export class ProjectReview {
         continue;
       }
 
+      const members = await this.chat.listSpaceMembers(target);
       for (const text of await this.messagesFor(project.id, project.name, category)) {
-        await this.chat.postMessage(target, text);
+        await this.chat.postMessage(target, mentionizeText(text, members));
       }
     }
   }

@@ -3,6 +3,7 @@ import { GoogleChatIntegration } from '../integrations/google-chat';
 import { RileyStore } from '../integrations/riley-store';
 import { DonezyTask } from '../utils/types';
 import { MeetingCandidate } from './meeting-trigger';
+import { mentionFor } from './mentions';
 
 const EXPIRY_HOURS = 48;
 const MIN_MATCH_LENGTH = 6;
@@ -32,11 +33,12 @@ export const buildProposalText = (
   items: ProposalItem[],
   clientMatched: boolean,
   clientName: string | null,
-  attendeeTags: string[]
+  attendeeTags: string[],
+  assigneeTag: (name: string) => string
 ): string => {
   const lines = items.map((item) => {
     const detail = item.task && item.task !== item.title ? ` - ${item.task}` : '';
-    const assignee = item.assignee ? ` [${item.assignee}]` : '';
+    const assignee = item.assignee ? ` [${assigneeTag(item.assignee)}]` : '';
     const status = item.existing_task ? ` (possible match: "${item.existing_task}")` : ' (new)';
     return `${item.number}. *${item.title}*${detail}${assignee}${status}`;
   });
@@ -85,15 +87,14 @@ export class ProposalService {
     const clientName = clientMatched
       ? spaces.find((s) => s.space_name === candidate.space_name)?.display_name ?? candidate.client_key
       : null;
-    const chatUsers = await this.store.chatUsersByEmail(candidate.attendees);
+    const members = await this.chat.listSpaceMembers(target);
     const attendeeTags = candidate.attendees
-      .map((email) => chatUsers.get(email.toLowerCase())?.user_name)
-      .filter((name): name is string => !!name)
-      .map((name) => `<${name}>`);
+      .map((email) => mentionFor(email.split('@')[0].split('.')[0], members))
+      .filter((tag) => tag.startsWith('<'));
 
     const posted = await this.chat.postMessage(
       target,
-      buildProposalText(candidate.title, items, clientMatched, clientName, attendeeTags)
+      buildProposalText(candidate.title, items, clientMatched, clientName, attendeeTags, (name) => mentionFor(name, members))
     );
     if (!posted) return false;
 

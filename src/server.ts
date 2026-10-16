@@ -185,10 +185,6 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    logger.info('Sender', { userId: parsed.userId, userEmail: parsed.userEmail, userName: parsed.userName });
-    if (parsed.userId && parsed.userEmail) {
-      await rileyStore.recordChatUser(parsed.userId, parsed.userEmail, parsed.userName);
-    }
 
     // Check if Riley is mentioned
     const isMentioned = parser.isRileyMention(parsed.text);
@@ -469,7 +465,8 @@ app.post('/test/sample-proposal', async (_req: Request, res: Response): Promise<
     ],
     true,
     'Sample Client',
-    ['<users/111111111111111111111>', '<users/222222222222222222222>']
+    ['<users/111111111111111111111>', '<users/222222222222222222222>'],
+    (name) => name
   );
   await googleChat.postMessage(process.env.GOOGLE_CHAT_SPACE_ID || '', text);
   res.status(200).json({ posted: true });
