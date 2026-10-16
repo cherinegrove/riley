@@ -203,7 +203,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
     if (updateReply) {
       const replyThread = payload.message?.thread?.name;
       await googleChat.sendMessage(payload.message?.space?.name || '', {
-        text: `[TASK UPDATE]\n${updateReply}`,
+        text: `*[TASK UPDATE]*\n${updateReply}`,
         ...(replyThread && { thread: { name: replyThread } }),
       });
       res.status(200).json({});
@@ -214,7 +214,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
     if (createReply) {
       const replyThread = payload.message?.thread?.name;
       await googleChat.sendMessage(payload.message?.space?.name || '', {
-        text: `[TASK CREATED]\n${createReply}`,
+        text: `*[TASK CREATED]*\n${createReply}`,
         ...(replyThread && { thread: { name: replyThread } }),
       });
       res.status(200).json({});
@@ -230,7 +230,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
     if (approvalReply) {
       const replyThread = payload.message?.thread?.name;
       await googleChat.sendMessage(payload.message?.space?.name || '', {
-        text: `[PROPOSAL REPLY]\n${approvalReply}`,
+        text: `*[PROPOSAL REPLY]*\n${approvalReply}`,
         ...(replyThread && { thread: { name: replyThread } }),
       });
       res.status(200).json({});
@@ -249,7 +249,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
       const answer = await assistant.answer(parsed.text.replace(/@riley\b/i, '').trim(), isApprover);
       const replyThread = payload.message?.thread?.name;
       await googleChat.sendMessage(payload.message?.space?.name || '', {
-        text: `[ASSISTANT]\n${answer}`,
+        text: `*[ASSISTANT]*\n${answer}`,
         ...(replyThread && { thread: { name: replyThread } }),
       });
       res.status(200).json({});

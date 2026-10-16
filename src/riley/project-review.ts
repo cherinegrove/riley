@@ -126,13 +126,13 @@ const buildCategoryBody = (
 };
 
 const CATEGORY_LABELS: Record<ReviewCategory, string> = {
-  overdue: '[OVERDUE]',
-  due_today: '[DUE TODAY]',
-  unassigned: '[UNASSIGNED]',
-  no_due_date: '[NO DUE DATE]',
-  external: '[AWAITING EXTERNAL]',
-  internal: '[AWAITING INTERNAL]',
-  backlog: '[BACKLOG]',
+  overdue: '*[OVERDUE]*',
+  due_today: '*[DUE TODAY]*',
+  unassigned: '*[UNASSIGNED]*',
+  no_due_date: '*[NO DUE DATE]*',
+  external: '*[AWAITING EXTERNAL]*',
+  internal: '*[AWAITING INTERNAL]*',
+  backlog: '*[BACKLOG]*',
 };
 
 export const buildCategoryMessage = (
