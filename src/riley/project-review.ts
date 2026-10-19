@@ -188,10 +188,10 @@ export class ProjectReview {
 
   start(): void {
     const schedules: Array<{ expression: string; category: ReviewCategory }> = [
-      { expression: '0 7 * * *', category: 'overdue' },
-      { expression: '0 10 * * *', category: 'due_today' },
-      { expression: '0 12 * * *', category: 'unassigned' },
-      { expression: '0 12 * * *', category: 'no_due_date' },
+      { expression: '0 7 * * 1-5', category: 'overdue' },
+      { expression: '0 10 * * 1-5', category: 'due_today' },
+      { expression: '0 12 * * 1-5', category: 'unassigned' },
+      { expression: '0 12 * * 1-5', category: 'no_due_date' },
       { expression: '0 8 * * 1', category: 'external' },
       { expression: '0 8 * * 5', category: 'internal' },
       { expression: '0 12 * * 5', category: 'backlog' },
