@@ -3,6 +3,7 @@ import { PendingProposal, RileyStore } from '../integrations/riley-store';
 import { donezyTaskUrl } from '../utils/types';
 
 export const APPROVER_EMAIL = 'cherine@cybersolve.net';
+export const SILENT = '';
 export const CREATOR_DONEZY_USER_ID = 'c5186049-990e-43c5-847a-c5bf0bc46220';
 
 export type ApproveCommand = { kind: 'decline' } | { kind: 'approve'; numbers: number[] | 'all' };
@@ -42,7 +43,7 @@ export class ApprovalService {
     if (!proposal) return null;
 
     if (senderEmail?.toLowerCase() !== APPROVER_EMAIL) {
-      return 'Only Cherine can approve tasks for this proposal.';
+      return SILENT;
     }
 
     if (new Date(proposal.expires_at) < new Date()) {
@@ -116,7 +117,7 @@ export class ApprovalService {
     if (!confirm && !mark) return null;
 
     if (senderEmail?.toLowerCase() !== APPROVER_EMAIL) {
-      return 'Only Cherine can change tasks from chat.';
+      return SILENT;
     }
 
     if (confirm) {
@@ -145,7 +146,7 @@ export class ApprovalService {
     if (!header) return null;
 
     if (senderEmail?.toLowerCase() !== APPROVER_EMAIL) {
-      return 'Only Cherine can create tasks from chat.';
+      return SILENT;
     }
 
     const target = header[1].trim().replace(/\s+client$/i, '');

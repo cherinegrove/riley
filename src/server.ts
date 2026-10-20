@@ -197,40 +197,24 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    const updateReply = await approvals.handleTaskUpdate(parsed.text, parsed.userEmail);
-    if (updateReply) {
-      const replyThread = payload.message?.thread?.name;
-      await googleChat.sendMessage(payload.message?.space?.name || '', {
-        text: `*[TASK UPDATE]*\n${updateReply}`,
-        ...(replyThread && { thread: { name: replyThread } }),
-      });
-      res.status(200).json({});
-      return;
-    }
-
-    const createReply = await approvals.handleCreateRequest(parsed.text, parsed.userEmail);
-    if (createReply) {
-      const replyThread = payload.message?.thread?.name;
-      await googleChat.sendMessage(payload.message?.space?.name || '', {
-        text: `*[TASK CREATED]*\n${createReply}`,
-        ...(replyThread && { thread: { name: replyThread } }),
-      });
-      res.status(200).json({});
-      return;
-    }
-
-    const approvalReply = await approvals.handle(
-      parsed.text,
-      payload.message?.space?.name || '',
-      payload.message?.thread?.name,
-      parsed.userEmail
-    );
-    if (approvalReply) {
-      const replyThread = payload.message?.thread?.name;
-      await googleChat.sendMessage(payload.message?.space?.name || '', {
-        text: `*[PROPOSAL REPLY]*\n${approvalReply}`,
-        ...(replyThread && { thread: { name: replyThread } }),
-      });
+    const replyThread = payload.message?.thread?.name;
+    const approverReplies: Array<[string | null, string]> = [
+      [await approvals.handleTaskUpdate(parsed.text, parsed.userEmail), '*[TASK UPDATE]*'],
+      [await approvals.handleCreateRequest(parsed.text, parsed.userEmail), '*[TASK CREATED]*'],
+      [
+        await approvals.handle(parsed.text, payload.message?.space?.name || '', replyThread, parsed.userEmail),
+        '*[PROPOSAL REPLY]*',
+      ],
+    ];
+    const handled = approverReplies.find(([reply]) => reply !== null);
+    if (handled) {
+      const [reply, label] = handled;
+      if (reply) {
+        await googleChat.sendMessage(payload.message?.space?.name || '', {
+          text: `${label}\n${reply}`,
+          ...(replyThread && { thread: { name: replyThread } }),
+        });
+      }
       res.status(200).json({});
       return;
     }
