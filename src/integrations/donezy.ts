@@ -1,5 +1,47 @@
 import { createClient } from '@supabase/supabase-js';
 import { DonezyTask, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL, DONEZY_CLOSED_STATUSES } from '../utils/types';
+
+const MATCH_THRESHOLD = 0.75;
+
+const compact = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+const editSimilarity = (a: string, b: string): number => {
+  if (a === b) return 1;
+  if (!a.length || !b.length) return 0;
+  let previous = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost);
+    }
+    previous = current;
+  }
+  return 1 - previous[b.length] / Math.max(a.length, b.length);
+};
+
+const similarity = (query: string, candidate: string): number => {
+  const q = compact(query);
+  const c = compact(candidate);
+  if (!q || !c) return 0;
+  const whole = editSimilarity(q, c);
+  const prefix = c.length > q.length ? editSimilarity(q, c.slice(0, q.length)) : 0;
+  return Math.max(whole, prefix);
+};
+
+export const bestMatch = <T>(
+  query: string,
+  candidates: Array<{ item: T; name: string }>
+): { item: T; score: number; ties: string[] } | null => {
+  const scored = candidates
+    .map((candidate) => ({ ...candidate, score: similarity(query, candidate.name) }))
+    .filter((c) => c.score >= MATCH_THRESHOLD)
+    .sort((a, b) => b.score - a.score);
+  if (scored.length === 0) return null;
+  const top = scored[0];
+  const ties = scored.filter((c) => c.score === top.score).map((c) => c.name);
+  return { item: top.item, score: top.score, ties };
+};
 import { differenceInDays } from 'date-fns';
 
 export class DonezyIntegration {
@@ -177,27 +219,28 @@ export class DonezyIntegration {
   }
 
   async findOpenProjectForClient(clientName: string): Promise<{ id: string; name: string } | { error: string }> {
-    const { data: clients, error: clientError } = await this.supabase
-      .from('clients')
-      .select('id, name')
-      .ilike('name', clientName.trim());
+    const { data: clients, error: clientError } = await this.supabase.from('clients').select('id, name');
     if (clientError) return { error: clientError.message };
+    const { data: named, error: namedError } = await this.supabase
+      .from('projects')
+      .select('id, name')
+      .eq('status', 'in-progress');
+    if (namedError) return { error: namedError.message };
 
-    const client = ((clients || []) as any[])[0];
-    if (!client) {
-      const { data: named, error: namedError } = await this.supabase
-        .from('projects')
-        .select('id, name')
-        .ilike('name', clientName.trim())
-        .eq('status', 'in-progress');
-      if (namedError) return { error: namedError.message };
-      const matches = (named || []) as any[];
-      if (matches.length === 1) return { id: matches[0].id, name: matches[0].name };
-      if (matches.length > 1) {
-        return { error: `${matches.length} open projects are called "${clientName}", so I can't tell which one to use` };
+    const wanted = clientName.trim().replace(/\bclient\b/i, '').trim() || clientName.trim();
+    const clientMatch = bestMatch(wanted, ((clients || []) as any[]).map((c) => ({ item: c, name: c.name })));
+    const projectMatch = bestMatch(wanted, ((named || []) as any[]).map((p) => ({ item: p, name: p.name })));
+
+    if (projectMatch && (!clientMatch || projectMatch.score > clientMatch.score)) {
+      if (projectMatch.ties.length > 1) {
+        return { error: `"${clientName}" could match ${projectMatch.ties.join(' or ')}. Please use the exact name` };
       }
+      return { id: projectMatch.item.id, name: projectMatch.item.name };
+    }
+    if (!clientMatch) {
       return { error: `there is no Donezy client or open project called "${clientName}"` };
     }
+    const client = clientMatch.item;
 
     const { data: projects, error: projectError } = await this.supabase
       .from('projects')
