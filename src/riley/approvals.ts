@@ -25,7 +25,7 @@ export const parseApproval = (text: string): ApproveCommand | null => {
   return { kind: 'approve', numbers };
 };
 
-const CLIENT_LINE = /^\s*client\s+(.+)$/im;
+const CLIENT_LINE = /(?:^|\n)\s*client\s+(.+?)(?=\s+(?:yes|no)\b|\n|$)/i;
 
 export class ApprovalService {
   constructor(private store: RileyStore, private donezy: DonezyIntegration) {}
