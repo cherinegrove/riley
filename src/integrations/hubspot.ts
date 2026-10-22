@@ -312,6 +312,57 @@ export class HubSpotIntegration {
     }
   }
 
+  async getEndedMeetings(sinceIso: string, nowIso: string): Promise<Array<{
+    id: string;
+    title: string;
+    endAt: string;
+    actionItems: string[];
+    companyName: string | null;
+  }>> {
+    const { data } = await this.client.post(`/crm/v3/objects/meetings/search`, {
+      filterGroups: [
+        {
+          filters: [
+            { propertyName: 'hs_meeting_end_time', operator: 'GTE', value: String(Date.parse(sinceIso)) },
+            { propertyName: 'hs_meeting_end_time', operator: 'LTE', value: String(Date.parse(nowIso)) },
+          ],
+        },
+      ],
+      properties: ['hs_meeting_title', 'hs_meeting_end_time', 'hs_meeting_body', 'hs_meeting_summary', 'hs_meeting_transcript'],
+      sorts: [{ propertyName: 'hs_meeting_end_time', direction: 'ASCENDING' }],
+      limit: 100,
+    });
+
+    const meetings = [];
+    for (const meeting of data.results || []) {
+      const props = meeting.properties || {};
+      const text = props.hs_meeting_transcript || props.hs_meeting_summary || props.hs_meeting_body || '';
+
+      let companyName: string | null = null;
+      try {
+        const { data: assoc } = await this.client.get(`/crm/v3/objects/meetings/${meeting.id}/associations/companies`);
+        const companyId = assoc.results?.[0]?.id;
+        if (companyId) {
+          const { data: company } = await this.client.get(`/crm/v3/objects/companies/${companyId}`, {
+            params: { properties: 'name' },
+          });
+          companyName = company.properties?.name || null;
+        }
+      } catch (error) {
+        console.error(`[HubSpot] Failed to read company for meeting ${meeting.id}:`, error);
+      }
+
+      meetings.push({
+        id: String(meeting.id),
+        title: props.hs_meeting_title || 'Untitled meeting',
+        endAt: props.hs_meeting_end_time,
+        actionItems: text ? this.extractActionItems(text) : [],
+        companyName,
+      });
+    }
+    return meetings;
+  }
+
   private extractActionItems(text: string): string[] {
     if (!text) return [];
 

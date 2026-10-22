@@ -353,6 +353,14 @@ export class DonezyIntegration {
     return { id: rows[0].id, title: task.title, project_name: task.project_name ?? '' };
   }
 
+  async updateTask(id: string, fields: { title?: string; status?: string; assignee_id?: string | null; due_date?: string | null }): Promise<void> {
+    const { error } = await this.supabase
+      .from('tasks')
+      .update({ ...fields, updated_at: new Date().toISOString() } as never)
+      .eq('id', id);
+    if (error) throw new Error(error.message);
+  }
+
   async markTaskDone(id: string): Promise<void> {
     const { error } = await this.supabase
       .from('tasks')

@@ -31,7 +31,12 @@ const CLIENT_LINE = /(?:^|\n)\s*client\s+(.+?)(?=\s+(?:yes|no)\b|\n|$)/i;
 export class ApprovalService {
   constructor(private store: RileyStore, private donezy: DonezyIntegration) {}
 
-  async handle(text: string, spaceName: string, threadName: string | undefined, senderEmail: string | undefined): Promise<string | null> {
+  private async creatorFor(userName: string | undefined): Promise<string> {
+    if (!userName) return CREATOR_DONEZY_USER_ID;
+    return (await this.donezy.getAssigneeIdByName(userName)) ?? CREATOR_DONEZY_USER_ID;
+  }
+
+  async handle(text: string, spaceName: string, threadName: string | undefined, userName: string | undefined): Promise<string | null> {
     const cleaned = text.replace(/@riley\b/i, '').trim();
     const clientLine = cleaned.match(CLIENT_LINE);
     const remainder = clientLine ? cleaned.replace(clientLine[0], '').trim() : cleaned;
@@ -41,10 +46,6 @@ export class ApprovalService {
 
     const proposal = await this.store.findPendingProposal(spaceName, threadName);
     if (!proposal) return null;
-
-    if (senderEmail?.toLowerCase() !== APPROVER_EMAIL) {
-      return SILENT;
-    }
 
     if (new Date(proposal.expires_at) < new Date()) {
       await this.store.updateProposalStatus(proposal.id, 'expired');
@@ -106,19 +107,15 @@ export class ApprovalService {
       return `I can't create these tasks yet: ${project.error}.`;
     }
 
-    const result = await this.createTasks(proposal, chosen, project.id);
+    const result = await this.createTasks(proposal, chosen, project.id, await this.creatorFor(userName));
     return filedMessage ? `${filedMessage}\n\n${result}` : result;
   }
 
-  async handleTaskUpdate(text: string, senderEmail: string | undefined): Promise<string | null> {
+  async handleTaskUpdate(text: string): Promise<string | null> {
     const cleaned = text.replace(/@riley\b/i, '').trim();
     const confirm = cleaned.match(/^confirm\s+done\s+([0-9a-f]{6,})$/i);
     const mark = cleaned.match(/^(?:please\s+)?(?:mark|set)\s+["“]?(.+?)["”]?\s+as\s+done[.!]?$/i);
     if (!confirm && !mark) return null;
-
-    if (senderEmail?.toLowerCase() !== APPROVER_EMAIL) {
-      return SILENT;
-    }
 
     if (confirm) {
       const task = await this.donezy.findOpenTaskByIdPrefix(confirm[1]);
@@ -140,14 +137,10 @@ export class ApprovalService {
     return `Found ${matches.length} open tasks matching "${mark![1]}". Pick one and reply \`confirm done <ID>\`:\n${lines.join('\n')}`;
   }
 
-  async handleCreateRequest(text: string, senderEmail: string | undefined): Promise<string | null> {
+  async handleCreateRequest(text: string, userName: string | undefined): Promise<string | null> {
     const cleaned = text.replace(/@riley\b/i, '').trim();
     const header = cleaned.match(/\bcreate\b[^\n]*?\bunder\s+([^\n]+)/i);
     if (!header) return null;
-
-    if (senderEmail?.toLowerCase() !== APPROVER_EMAIL) {
-      return SILENT;
-    }
 
     const target = header[1].trim().replace(/\s+client$/i, '');
     const titles = cleaned
@@ -161,6 +154,7 @@ export class ApprovalService {
       return `I can't create these tasks: ${project.error}. Name the client or project exactly, e.g. "under Stratasys Direct".`;
     }
 
+    const creatorId = await this.creatorFor(userName);
     const created: string[] = [];
     const failed: string[] = [];
     for (const title of titles) {
@@ -169,7 +163,7 @@ export class ApprovalService {
           title,
           description: 'Created from Riley chat',
           project_id: project.id,
-          creator_id: CREATOR_DONEZY_USER_ID,
+          creator_id: creatorId,
           assignee_id: null,
         });
         created.push(title);
@@ -187,7 +181,8 @@ export class ApprovalService {
   private async createTasks(
     proposal: PendingProposal,
     items: PendingProposal['items'],
-    projectId: string
+    projectId: string,
+    creatorId: string
   ): Promise<string> {
     const created: string[] = [];
     const createdNumbers: number[] = [];
@@ -200,7 +195,7 @@ export class ApprovalService {
           title: item.title,
           description: `${item.task}\n\nFrom meeting: ${proposal.title}`,
           project_id: projectId,
-          creator_id: CREATOR_DONEZY_USER_ID,
+          creator_id: creatorId,
           assignee_id: assigneeId,
         });
         created.push(item.title);

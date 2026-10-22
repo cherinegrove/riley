@@ -13,7 +13,6 @@ import { ProposalService, buildProposalText } from './riley/proposals';
 import { ApprovalService } from './riley/approvals';
 import { ProjectReview, ReviewCategory } from './riley/project-review';
 import { Assistant } from './riley/assistant';
-import { APPROVER_EMAIL } from './riley/approvals';
 import { mentionizeText } from './riley/mentions';
 import { GoogleChatMessage, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL } from './utils/types';
 
@@ -40,7 +39,7 @@ const assistant = new Assistant(process.env.ANTHROPIC_API_KEY, donezy, hubspot);
 const rileyStore = createRileyStore();
 const proposals = new ProposalService(rileyStore, googleChat, donezy);
 const approvals = new ApprovalService(rileyStore, donezy);
-const meetingTrigger = new MeetingTrigger(config.vribble.url, config.vribble.key, rileyStore, (candidate: MeetingCandidate) =>
+const meetingTrigger = new MeetingTrigger(hubspot, rileyStore, (candidate: MeetingCandidate) =>
   proposals.propose(candidate)
 );
 meetingTrigger.start(30 * 60 * 1000);
@@ -199,10 +198,10 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
 
     const replyThread = payload.message?.thread?.name;
     const approverReplies: Array<[string | null, string]> = [
-      [await approvals.handleTaskUpdate(parsed.text, parsed.userEmail), '*[TASK UPDATE]*'],
-      [await approvals.handleCreateRequest(parsed.text, parsed.userEmail), '*[TASK CREATED]*'],
+      [await approvals.handleTaskUpdate(parsed.text), '*[TASK UPDATE]*'],
+      [await approvals.handleCreateRequest(parsed.text, parsed.userName), '*[TASK CREATED]*'],
       [
-        await approvals.handle(parsed.text, payload.message?.space?.name || '', replyThread, parsed.userEmail),
+        await approvals.handle(parsed.text, payload.message?.space?.name || '', replyThread, parsed.userName),
         '*[PROPOSAL REPLY]*',
       ],
     ];
@@ -227,8 +226,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
     logger.info(`Parsed query: ${query.type}`, { query });
 
     if (query.type === 'unknown' && assistant.enabled) {
-      const isApprover = parsed.userEmail?.toLowerCase() === APPROVER_EMAIL;
-      const answer = await assistant.answer(parsed.text.replace(/@riley\b/i, '').trim(), isApprover);
+      const answer = await assistant.answer(parsed.text.replace(/@riley\b/i, '').trim(), parsed.userName);
       const replyThread = payload.message?.thread?.name;
       await googleChat.sendMessage(payload.message?.space?.name || '', {
         text: `*[ASSISTANT]*\n${answer}`,

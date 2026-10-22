@@ -22,6 +22,23 @@ const CREATE_TOOL = {
   },
 };
 
+const UPDATE_TOOL = {
+  name: 'update_task',
+  description: 'Update one existing open Donezy task. Requires the task title and the client or project name, so the right task is found. Only call this when the title and client are given and exactly one open task matches; otherwise ask the user. Fields you may change: status, assignee, due_date (YYYY-MM-DD), title.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      task_title: { type: 'string' },
+      project_or_client: { type: 'string' },
+      status: { type: 'string' },
+      assignee: { type: 'string' },
+      due_date: { type: 'string' },
+      new_title: { type: 'string' },
+    },
+    required: ['task_title', 'project_or_client'],
+  },
+};
+
 const STATUS_ALIASES: Record<string, string> = {
   todo: 'todo',
   'to do': 'todo',
@@ -115,9 +132,9 @@ export class Assistant {
     return !!this.apiKey;
   }
 
-  async answer(question: string, allowWrites: boolean): Promise<string> {
+  async answer(question: string, actorName: string | undefined): Promise<string> {
     const messages: Array<{ role: 'user' | 'assistant'; content: unknown }> = [{ role: 'user', content: question }];
-    const tools = allowWrites ? [...TOOLS, CREATE_TOOL] : TOOLS;
+    const tools = [...TOOLS, CREATE_TOOL, UPDATE_TOOL];
     const system =
       'You are Riley, the project manager bot for Cybersolve. Answer the user\'s question using the tools when you need data. ' +
       'You are read-only: never claim to have changed anything. Be brief and plain, no emojis, use short bullet points. ' +
@@ -126,7 +143,9 @@ export class Assistant {
       'When the user asks to close or mark a task done, use find_open_tasks, list the matches with their short IDs, and tell them to reply "@Riley confirm done <short ID>" to mark it done. ' +
       'Never say a task has been marked done, because you cannot change tasks. ' +
       'If the user asks you to create a task, use create_task only when the title and client or project are clear. ' +
-      'If the client, title, or assignee is unclear, ask one short question such as "Which client should this go under?" instead of creating it. ' +
+      'If anything is missing, reply with exactly what you need, as a short list. For a new task ask for: task title, client or project, assignee (optional), status (optional, default To do), due date (optional). ' +
+      'If the user asks you to update a task, ask for: task title, client or project, and the change (status, assignee, due date, or new title). Use update_task only when all of these are given. ' +
+      'If you find more than one matching task, list them with their links and ask which one. ' +
       'After creating a task, reply with its title, project, status, and url.';
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -157,7 +176,7 @@ export class Assistant {
       messages.push({ role: 'assistant', content: body.content });
       const results = [];
       for (const block of body.content.filter((b) => b.type === 'tool_use')) {
-        const output = await this.runTool(block.name as string, block.input ?? {}, allowWrites);
+        const output = await this.runTool(block.name as string, block.input ?? {}, actorName);
         results.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(output) });
       }
       messages.push({ role: 'user', content: results });
@@ -171,10 +190,10 @@ export class Assistant {
     return summariseTasks(tasks, lastComments);
   }
 
-  private async runTool(name: string, input: ToolInput, allowWrites: boolean): Promise<unknown> {
+  private async runTool(name: string, input: ToolInput, actorName: string | undefined): Promise<unknown> {
     try {
+      const creatorId = (actorName && (await this.donezy.getAssigneeIdByName(actorName))) || CREATOR_DONEZY_USER_ID;
       if (name === 'create_task') {
-        if (!allowWrites) return { error: 'only the approver can create tasks' };
         const project = await this.donezy.findOpenProjectForClient(input.project_or_client);
         if ('error' in project) return { error: project.error };
         let assigneeId: string | null = null;
@@ -186,12 +205,33 @@ export class Assistant {
           title: input.title,
           description: input.description || 'Created from Riley chat',
           project_id: project.id,
-          creator_id: CREATOR_DONEZY_USER_ID,
+          creator_id: creatorId,
           assignee_id: assigneeId,
           status: normaliseStatus(input.status),
           due_date: input.due_date || null,
         });
         return { created: true, title: input.title, project: project.name, url: donezyTaskUrl(created?.id ?? '') };
+      }
+      if (name === 'update_task') {
+        const matches = (await this.donezy.findOpenTasksByTitle(input.task_title)).filter((t) =>
+          t.project_name.toLowerCase().includes(input.project_or_client.toLowerCase().replace(/\bclient\b/, '').trim())
+        );
+        if (matches.length === 0) return { error: `no open task titled "${input.task_title}" under "${input.project_or_client}"` };
+        if (matches.length > 1) {
+          return { error: 'more than one task matches', options: matches.map((t) => ({ title: t.title, project: t.project_name, url: donezyTaskUrl(t.id) })) };
+        }
+        const fields: { title?: string; status?: string; assignee_id?: string | null; due_date?: string | null } = {};
+        if (input.new_title) fields.title = input.new_title;
+        if (input.status) fields.status = normaliseStatus(input.status);
+        if (input.due_date) fields.due_date = input.due_date;
+        if (input.assignee) {
+          const assigneeId = await this.donezy.getAssigneeIdByName(input.assignee);
+          if (!assigneeId) return { error: `no Donezy user matches "${input.assignee}"` };
+          fields.assignee_id = assigneeId;
+        }
+        if (Object.keys(fields).length === 0) return { error: 'no change was given; ask what to change' };
+        await this.donezy.updateTask(matches[0].id, fields);
+        return { updated: true, title: input.new_title || matches[0].title, project: matches[0].project_name, url: donezyTaskUrl(matches[0].id) };
       }
       if (name === 'client_open_tasks') {
         return this.enrich(await this.donezy.getTasksByClientName(input.client_name));
