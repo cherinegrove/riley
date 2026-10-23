@@ -368,7 +368,27 @@ export class HubSpotIntegration {
   private extractActionItems(text: string): string[] {
     if (!text) return [];
 
-    const lines = text.split('\n');
+    const plain = text
+      .replace(/<\/(p|li|h[1-6]|div)\s*>|<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&#39;|&rsquo;/g, "'")
+      .replace(/&quot;/g, '"');
+    const allLines = plain.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+
+    const headingIndex = allLines.findIndex((l) => /^[#*\s]*action items[:*\s]*$/i.test(l));
+    if (headingIndex >= 0) {
+      const section: string[] = [];
+      for (const line of allLines.slice(headingIndex + 1)) {
+        if (/^#/.test(line) || /^[#*\s]*(decisions|key points|overview|next steps)\b/i.test(line)) break;
+        const item = line.replace(/^[\s•\-\*]+/, '').trim();
+        if (item.length > 5) section.push(item);
+      }
+      if (section.length > 0) return section;
+    }
+
+    const lines = allLines;
     const actionItems: string[] = [];
 
     // Look for lines that contain action items
