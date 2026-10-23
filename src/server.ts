@@ -408,8 +408,15 @@ app.post('/webhook/google-chat', handleGoogleChatWebhook);
  * Health check endpoint
  */
 app.post('/test/meeting-trigger', async (_req: Request, res: Response): Promise<void> => {
-  const candidates = await meetingTrigger.scan(new Date(), false);
-  res.status(200).json({ count: candidates.length, candidates });
+  const now = new Date();
+  const since = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+  const ended = await hubspot.getEndedMeetings(since.toISOString(), now.toISOString());
+  const candidates = await meetingTrigger.scan(now, false);
+  res.status(200).json({
+    hubspot_meetings_with_actions: ended.map((m) => ({ id: m.id, title: m.title, endAt: m.endAt, company: m.companyName, actions: m.actionItems.length })),
+    count: candidates.length,
+    candidates,
+  });
 });
 
 app.post('/test/repost-proposal/:meetingId', async (req: Request, res: Response): Promise<void> => {
