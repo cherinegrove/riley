@@ -34,6 +34,19 @@ const byAssignee = (tasks: DonezyTask[]): Array<[string, DonezyTask[]]> => {
   return [...groups.entries()];
 };
 
+export const primaryCategory = (task: DonezyTask, now: Date): ReviewCategory | null => {
+  if (task.status === 'backlog') return 'backlog';
+  const today = sastDate(now.toISOString()) as string;
+  const due = sastDate(task.due_date);
+  if (due && due < today) return 'overdue';
+  if (due === today) return 'due_today';
+  if (task.status === DONEZY_AWAITING_INTERNAL) return 'internal';
+  if (task.status === DONEZY_AWAITING_EXTERNAL) return 'external';
+  if (task.assigned_to === 'Unassigned') return 'unassigned';
+  if (!due) return 'no_due_date';
+  return null;
+};
+
 const buildCategoryBody = (
   category: ReviewCategory,
   projectName: string,
@@ -42,7 +55,7 @@ const buildCategoryBody = (
   lastComments: Map<string, string>
 ): string | null => {
   const today = sastDate(now.toISOString()) as string;
-  const open = tasks.filter((t) => t.status !== 'backlog');
+  const open = tasks.filter((t) => t.status !== 'backlog' && primaryCategory(t, now) === category);
 
   if (category === 'overdue') {
     const list = open.filter((t) => (sastDate(t.due_date) ?? '9999') < today);
