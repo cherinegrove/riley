@@ -337,6 +337,8 @@ export class HubSpotIntegration {
     for (const meeting of data.results || []) {
       const props = meeting.properties || {};
       const text = props.hs_meeting_transcript || props.hs_meeting_summary || props.hs_meeting_body || '';
+      const actionItems = text ? this.extractActionItems(text) : [];
+      if (actionItems.length === 0) continue;
 
       let companyName: string | null = null;
       try {
@@ -356,7 +358,7 @@ export class HubSpotIntegration {
         id: String(meeting.id),
         title: props.hs_meeting_title || 'Untitled meeting',
         endAt: props.hs_meeting_end_time,
-        actionItems: text ? this.extractActionItems(text) : [],
+        actionItems,
         companyName,
       });
     }
