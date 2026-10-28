@@ -132,8 +132,22 @@ export class Assistant {
     return !!this.apiKey;
   }
 
-  async answer(question: string, actorName: string | undefined): Promise<string> {
-    const messages: Array<{ role: 'user' | 'assistant'; content: unknown }> = [{ role: 'user', content: question }];
+  async answer(question: string, actorName: string | undefined, history: Array<{ role: string; text: string }> = []): Promise<string> {
+    const messages: Array<{ role: 'user' | 'assistant'; content: unknown }> = [];
+    for (const turn of history) {
+      const role = turn.role === 'assistant' ? 'assistant' : 'user';
+      const last = messages[messages.length - 1];
+      if (last && last.role === role) {
+        last.content = `${last.content}\n${turn.text}`;
+      } else {
+        messages.push({ role, content: turn.text });
+      }
+    }
+    if (messages.length > 0 && messages[messages.length - 1].role === 'user') {
+      messages[messages.length - 1].content = `${messages[messages.length - 1].content}\n${question}`;
+    } else {
+      messages.push({ role: 'user', content: question });
+    }
     const tools = [...TOOLS, CREATE_TOOL, UPDATE_TOOL];
     let changed = false;
     const system =

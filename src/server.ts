@@ -226,8 +226,14 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
     logger.info(`Parsed query: ${query.type}`, { query });
 
     if (query.type === 'unknown' && assistant.enabled) {
-      const answer = await assistant.answer(parsed.text.replace(/@riley\b/i, '').trim(), parsed.userName);
       const replyThread = payload.message?.thread?.name;
+      const question = parsed.text.replace(/@riley\b/i, '').trim();
+      const history = replyThread ? await rileyStore.recentThreadTurns(replyThread) : [];
+      const answer = await assistant.answer(question, parsed.userName, history);
+      if (replyThread) {
+        await rileyStore.addThreadTurn(replyThread, 'user', question);
+        await rileyStore.addThreadTurn(replyThread, 'assistant', answer);
+      }
       await googleChat.sendMessage(payload.message?.space?.name || '', {
         text: `*[ASSISTANT]*\n${answer}`,
         ...(replyThread && { thread: { name: replyThread } }),

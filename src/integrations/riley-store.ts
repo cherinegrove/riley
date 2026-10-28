@@ -87,6 +87,27 @@ export class RileyStore {
     return found;
   }
 
+  async addThreadTurn(threadName: string, role: 'user' | 'assistant', text: string): Promise<void> {
+    if (!this.supabase || !threadName) return;
+    const { error } = await this.supabase.from('chat_thread_turns').insert({ thread_name: threadName, role, text: text.slice(0, 4000) });
+    if (error) console.error('[RileyStore] Failed to save thread turn:', error.message);
+  }
+
+  async recentThreadTurns(threadName: string, limit = 10): Promise<Array<{ role: string; text: string }>> {
+    if (!this.supabase || !threadName) return [];
+    const { data, error } = await this.supabase
+      .from('chat_thread_turns')
+      .select('role, text')
+      .eq('thread_name', threadName)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) {
+      console.error('[RileyStore] Failed to read thread turns:', error.message);
+      return [];
+    }
+    return ((data || []) as Array<{ role: string; text: string }>).reverse();
+  }
+
   async listSpaces(): Promise<ChatSpace[]> {
     if (!this.supabase) return [];
     const { data, error } = await this.supabase.from('chat_spaces').select('space_name, display_name, client_key');
