@@ -135,6 +135,7 @@ export class Assistant {
   async answer(question: string, actorName: string | undefined): Promise<string> {
     const messages: Array<{ role: 'user' | 'assistant'; content: unknown }> = [{ role: 'user', content: question }];
     const tools = [...TOOLS, CREATE_TOOL, UPDATE_TOOL];
+    let changed = false;
     const system =
       'You are Riley, the project manager bot for Cybersolve. Answer the user\'s question using the tools when you need data. ' +
       'You are read-only: never claim to have changed anything. Be brief and plain, no emojis, use short bullet points. ' +
@@ -170,6 +171,9 @@ export class Assistant {
 
       if (body.stop_reason !== 'tool_use') {
         const text = body.content.filter((block) => block.type === 'text').map((block) => block.text).join('\n').trim();
+        if (/\b(creat|updat|mark|added|done)/i.test(text) && !changed) {
+          return "I haven't changed anything in Donezy yet. Send the details as one message: for a new task, the title and the client or project; for an update, the task title, the client, and what to change.";
+        }
         return text || "I'm not sure what you need. Could you rephrase?";
       }
 
@@ -177,6 +181,8 @@ export class Assistant {
       const results = [];
       for (const block of body.content.filter((b) => b.type === 'tool_use')) {
         const output = await this.runTool(block.name as string, block.input ?? {}, actorName);
+        console.log(`[Assistant] ${block.name} input=${JSON.stringify(block.input)} result=${JSON.stringify(output).slice(0, 300)}`);
+        if (output && typeof output === 'object' && ('created' in output || 'updated' in output)) changed = true;
         results.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(output) });
       }
       messages.push({ role: 'user', content: results });
