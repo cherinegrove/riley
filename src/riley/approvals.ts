@@ -139,13 +139,19 @@ export class ApprovalService {
 
   async handleCreateRequest(text: string, userName: string | undefined): Promise<string | null> {
     const cleaned = text.replace(/@riley\b/i, '').trim();
-    const header = cleaned.match(/\bcreate\b[^\n]*?\bunder\s+([^\n]+)/i);
-    if (!header) return null;
+    const firstLine = cleaned.split('\n')[0];
+    if (!/\bcreate\b/i.test(firstLine)) return null;
 
-    const target = header[1].trim().replace(/\s+client$/i, '');
+    const targetMatch = firstLine.match(/\b(?:in|under)\s+(?:client\s+)?(.+?)(?:\s+and\s+assign\w*\b.*|\s+assign\w*\b.*|$)/i);
+    if (!targetMatch) return null;
+    const target = targetMatch[1].trim().replace(/\s+client$/i, '');
+
+    const assignMatch = firstLine.match(/\bassign\w*\s+(?:this\s+|these\s+|them\s+|it\s+)?(?:to\s+)?([A-Za-z][A-Za-z' .-]*?)\s*[.!]?$/i);
+    const assigneeName = assignMatch ? assignMatch[1].trim() : null;
+
     const titles = cleaned
       .split('\n')
-      .map((line) => line.match(/^\s*\d+[.)]\s+(.+)$/)?.[1].trim())
+      .map((line) => line.match(/^\s*(?:\d+[.)]|[•\-*])\s+(.+)$/)?.[1].trim())
       .filter((title): title is string => !!title);
     if (titles.length === 0) return null;
 
@@ -155,6 +161,10 @@ export class ApprovalService {
     }
 
     const creatorId = await this.creatorFor(userName);
+    const assigneeId = assigneeName ? await this.donezy.getAssigneeIdByName(assigneeName) : null;
+    if (assigneeName && !assigneeId) {
+      return `I couldn't find a Donezy user called "${assigneeName}". Send the full name, or leave out the assignee.`;
+    }
     const created: string[] = [];
     const failed: string[] = [];
     for (const title of titles) {
@@ -164,7 +174,7 @@ export class ApprovalService {
           description: 'Created from Riley chat',
           project_id: project.id,
           creator_id: creatorId,
-          assignee_id: null,
+          assignee_id: assigneeId,
         });
         created.push(title);
       } catch (error) {
