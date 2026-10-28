@@ -53,6 +53,7 @@ export class GoogleChatIntegration {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
+        params: message.thread ? { messageReplyOption: 'REPLY_MESSAGE_OR_FALLBACK_TO_NEW_THREAD' } : undefined,
       });
       return true;
     } catch (error) {
