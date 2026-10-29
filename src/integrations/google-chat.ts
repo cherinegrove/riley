@@ -53,11 +53,12 @@ export class GoogleChatIntegration {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
-        params: message.thread ? { messageReplyOption: 'REPLY_MESSAGE_OR_FALLBACK_TO_NEW_THREAD' } : undefined,
+        params: message.thread ? { messageReplyOption: 'REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD' } : undefined,
       });
       return true;
     } catch (error) {
-      console.error('Error sending message to Google Chat:', error);
+      const detail = axios.isAxiosError(error) ? error.response?.data : error;
+      console.error('Error sending message to Google Chat:', JSON.stringify(detail));
       return false;
     }
   }

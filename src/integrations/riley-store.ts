@@ -163,32 +163,30 @@ export class RileyStore {
     }
   }
 
+  /**
+   * A reply only applies to the proposal posted in the same thread. Without a
+   * thread, it applies only when exactly one proposal is pending in the space,
+   * so an approval can never land on a different meeting's proposal.
+   */
   async findPendingProposal(spaceName: string, threadName: string | undefined): Promise<PendingProposal | null> {
     if (!this.supabase) return null;
 
-    if (threadName) {
-      const { data } = await this.supabase
-        .from('meeting_proposals')
-        .select('*')
-        .eq('space_name', spaceName)
-        .eq('thread_name', threadName)
-        .eq('status', 'pending')
-        .limit(1);
-      if (data && data.length > 0) return data[0];
-    }
-
-    const { data, error } = await this.supabase
+    const pending = this.supabase
       .from('meeting_proposals')
       .select('*')
       .eq('space_name', spaceName)
       .eq('status', 'pending')
       .order('created_at', { ascending: false })
-      .limit(1);
+      .limit(2);
+    const { data, error } = threadName ? await pending.eq('thread_name', threadName) : await pending;
     if (error) {
       console.error('[RileyStore] Failed to find proposal:', error.message);
       return null;
     }
-    return data && data.length > 0 ? data[0] : null;
+
+    const rows = (data || []) as PendingProposal[];
+    if (threadName) return rows[0] ?? null;
+    return rows.length === 1 ? rows[0] : null;
   }
 
   async recordCreatedItems(id: string, createdNumbers: number[], status: string): Promise<void> {

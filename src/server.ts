@@ -52,6 +52,33 @@ const responder = createResponder();
 const logger = createLogger();
 
 /**
+ * Sends Riley's reply(ies) and, when they sit in a thread, saves the user's
+ * message and what was actually sent, so later turns in that thread can refer back.
+ */
+const replyTo = async (
+  spaceName: string,
+  threadName: string | undefined,
+  userText: string,
+  replies: string[],
+  kind: string
+): Promise<void> => {
+  const sent: string[] = [];
+  for (const text of replies) {
+    const ok = await googleChat.sendMessage(spaceName, {
+      text,
+      ...(threadName && { thread: { name: threadName } }),
+    });
+    if (ok) sent.push(text);
+  }
+  logger.info('Riley reply', { kind, threadName, sent: sent.length, attempted: replies.length });
+
+  if (threadName && sent.length > 0) {
+    await rileyStore.addThreadTurn(threadName, 'user', userText);
+    await rileyStore.addThreadTurn(threadName, 'assistant', sent.join('\n\n'));
+  }
+};
+
+/**
  * Google Chat webhook endpoint handler
  * Receives messages and processes @Riley mentions
  */
@@ -209,10 +236,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
     if (handled) {
       const [reply, label] = handled;
       if (reply) {
-        await googleChat.sendMessage(payload.message?.space?.name || '', {
-          text: `${label}\n${reply}`,
-          ...(replyThread && { thread: { name: replyThread } }),
-        });
+        await replyTo(payload.message?.space?.name || '', replyThread, parsed.text, [`${label}\n${reply}`], label);
       }
       res.status(200).json({});
       return;
@@ -230,14 +254,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
       const question = parsed.text.replace(/@riley\b/i, '').trim();
       const history = replyThread ? await rileyStore.recentThreadTurns(replyThread) : [];
       const answer = await assistant.answer(question, parsed.userName, history);
-      if (replyThread) {
-        await rileyStore.addThreadTurn(replyThread, 'user', question);
-        await rileyStore.addThreadTurn(replyThread, 'assistant', answer);
-      }
-      await googleChat.sendMessage(payload.message?.space?.name || '', {
-        text: `*[ASSISTANT]*\n${answer}`,
-        ...(replyThread && { thread: { name: replyThread } }),
-      });
+      await replyTo(payload.message?.space?.name || '', replyThread, question, [`*[ASSISTANT]*\n${answer}`], 'assistant');
       res.status(200).json({});
       return;
     }
@@ -386,13 +403,8 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
 
     if (spaceName) {
       logger.info('Sending to Google Chat', { spaceName, threadName });
-      for (const [index, part] of parts.entries()) {
-        const messageData = {
-          text: index === 0 ? `*Riley:*\n\n${part}` : part,
-          ...(threadName && { thread: { name: threadName } }),
-        };
-        await googleChat.sendMessage(spaceName, messageData);
-      }
+      const texts = parts.map((part, index) => (index === 0 ? `*Riley:*\n\n${part}` : part));
+      await replyTo(spaceName, threadName, parsed.text.replace(/@riley\b/i, '').trim(), texts, `query:${query.type}`);
       logger.info('Messages sent to Google Chat');
     } else {
       logger.warn('No space name found');

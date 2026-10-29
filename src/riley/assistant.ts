@@ -185,7 +185,10 @@ export class Assistant {
 
       if (body.stop_reason !== 'tool_use') {
         const text = body.content.filter((block) => block.type === 'text').map((block) => block.text).join('\n').trim();
-        if (/\b(creat|updat|mark|added|done)/i.test(text) && !changed) {
+        // Only catch a false success claim: the user asked for a change, the reply says one was made, and no write tool ran.
+        const asksForChange = /\b(creat|add|updat|change|mark|set|assign|move)/i.test(question);
+        const claimsChange = /\b(creat|updat|marked|added)(ed)?\b/i.test(text);
+        if (asksForChange && claimsChange && !changed) {
           return "I haven't changed anything in Donezy yet. Send the details as one message: for a new task, the title and the client or project; for an update, the task title, the client, and what to change.";
         }
         return text || "I'm not sure what you need. Could you rephrase?";

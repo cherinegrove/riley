@@ -92,11 +92,10 @@ export class ProposalService {
       .map((email) => mentionFor(email.split('@')[0].split('.')[0], members))
       .filter((tag) => tag.startsWith('<'));
 
-    const posted = await this.chat.postMessage(
-      target,
-      buildProposalText(candidate.title, items, clientMatched, clientName, attendeeTags, (name) => mentionFor(name, members))
-    );
+    const text = buildProposalText(candidate.title, items, clientMatched, clientName, attendeeTags, (name) => mentionFor(name, members));
+    const posted = await this.chat.postMessage(target, text);
     if (!posted) return false;
+    if (posted.threadName) await this.store.addThreadTurn(posted.threadName, 'assistant', text);
 
     await this.store.saveProposal({
       vribble_meeting_id: candidate.vribble_meeting_id,
