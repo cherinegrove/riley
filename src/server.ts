@@ -7,7 +7,14 @@ import { createParser } from './riley/parser';
 import { createResponder, ResponseData } from './riley/responder';
 import { createLogger } from './riley/logger';
 import { createDailyDigest } from './riley/daily-digest';
-import { GoogleChatMessage } from './utils/types';
+import { createRileyStore } from './integrations/riley-store';
+import { MeetingCandidate, MeetingTrigger } from './riley/meeting-trigger';
+import { ProposalService, buildProposalText } from './riley/proposals';
+import { ApprovalService } from './riley/approvals';
+import { ProjectReview, ReviewCategory } from './riley/project-review';
+import { Assistant } from './riley/assistant';
+import { mentionizeText } from './riley/mentions';
+import { GoogleChatMessage, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL } from './utils/types';
 
 const app: Express = express();
 const config = getConfig();
@@ -28,11 +35,48 @@ app.use(express.static('public'));
 const donezy = createDonezyIntegration(config.donezy.url, config.donezy.key);
 const hubspot = createHubSpotIntegration(config.hubspot.apiKey);
 const googleChat = createGoogleChatIntegration();
+const assistant = new Assistant(process.env.ANTHROPIC_API_KEY, donezy, hubspot);
+const rileyStore = createRileyStore();
+const proposals = new ProposalService(rileyStore, googleChat, donezy);
+const approvals = new ApprovalService(rileyStore, donezy);
+const meetingTrigger = new MeetingTrigger(hubspot, rileyStore, (candidate: MeetingCandidate) =>
+  proposals.propose(candidate)
+);
+meetingTrigger.start(30 * 60 * 1000);
+const projectReview = new ProjectReview(rileyStore, googleChat, donezy);
+projectReview.start();
 
 // Initialize utilities
 const parser = createParser();
 const responder = createResponder();
 const logger = createLogger();
+
+/**
+ * Sends Riley's reply(ies) and, when they sit in a thread, saves the user's
+ * message and what was actually sent, so later turns in that thread can refer back.
+ */
+const replyTo = async (
+  spaceName: string,
+  threadName: string | undefined,
+  userText: string,
+  replies: string[],
+  kind: string
+): Promise<void> => {
+  const sent: string[] = [];
+  for (const text of replies) {
+    const ok = await googleChat.sendMessage(spaceName, {
+      text,
+      ...(threadName && { thread: { name: threadName } }),
+    });
+    if (ok) sent.push(text);
+  }
+  logger.info('Riley reply', { kind, threadName, sent: sent.length, attempted: replies.length });
+
+  if (threadName && sent.length > 0) {
+    await rileyStore.addThreadTurn(threadName, 'user', userText);
+    await rileyStore.addThreadTurn(threadName, 'assistant', sent.join('\n\n'));
+  }
+};
 
 /**
  * Google Chat webhook endpoint handler
@@ -103,7 +147,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
             return daysSinceUpdate >= 7 && (!t.days_overdue || t.days_overdue <= 0);
           });
           responseData.awaitingFeedbackTasks = assigneeAtRiskTasks.filter(t =>
-            t.status === 'awaiting_feedback_internal' || t.status === 'awaiting_feedback_external'
+            t.status === DONEZY_AWAITING_INTERNAL || t.status === DONEZY_AWAITING_EXTERNAL
           );
         } else {
           // It's a client - show their client-level risk review
@@ -145,7 +189,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
     // Google Chat sends events in a different format
     if (!eventPayload.chat || !eventPayload.chat.messagePayload) {
       logger.info('Not a chat message event');
-      res.status(200).json({ status: 'ok' });
+      res.status(200).json({});
       return;
     }
 
@@ -164,9 +208,10 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
 
     if (!parsed || !parsed.text) {
       logger.info('No parsed text found');
-      res.status(200).json({ status: 'ok' });
+      res.status(200).json({});
       return;
     }
+
 
     // Check if Riley is mentioned
     const isMentioned = parser.isRileyMention(parsed.text);
@@ -174,7 +219,26 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
 
     if (!isMentioned) {
       logger.info('Riley not mentioned');
-      res.status(200).json({ status: 'ok' });
+      res.status(200).json({});
+      return;
+    }
+
+    const replyThread = payload.message?.thread?.name;
+    const approverReplies: Array<[string | null, string]> = [
+      [await approvals.handleTaskUpdate(parsed.text), '*[TASK UPDATE]*'],
+      [await approvals.handleCreateRequest(parsed.text, parsed.userName), '*[TASK CREATED]*'],
+      [
+        await approvals.handle(parsed.text, payload.message?.space?.name || '', replyThread, parsed.userName),
+        '*[PROPOSAL REPLY]*',
+      ],
+    ];
+    const handled = approverReplies.find(([reply]) => reply !== null);
+    if (handled) {
+      const [reply, label] = handled;
+      if (reply) {
+        await replyTo(payload.message?.space?.name || '', replyThread, parsed.text, [`${label}\n${reply}`], label);
+      }
+      res.status(200).json({});
       return;
     }
 
@@ -185,6 +249,16 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
     const query = parser.parse(parsed.text);
     logger.info(`Parsed query: ${query.type}`, { query });
 
+    if (query.type === 'unknown' && assistant.enabled) {
+      const replyThread = payload.message?.thread?.name;
+      const question = parsed.text.replace(/@riley\b/i, '').trim();
+      const history = replyThread ? await rileyStore.recentThreadTurns(replyThread) : [];
+      const answer = await assistant.answer(question, parsed.userName, history);
+      await replyTo(payload.message?.space?.name || '', replyThread, question, [`*[ASSISTANT]*\n${answer}`], 'assistant');
+      res.status(200).json({});
+      return;
+    }
+
     // Update audit log with query type
     logger.setResponseSummary(`Query type: ${query.type}`);
 
@@ -192,6 +266,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
     const responseData: ResponseData = {};
     let spaceName = payload.message?.space?.name || '';
     let threadName = payload.message?.thread?.name;
+    await rileyStore.recordSpace(spaceName, payload.message?.space?.displayName);
 
     switch (query.type) {
       case 'client_status': {
@@ -288,7 +363,7 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
               return daysSinceUpdate >= 7 && (!t.days_overdue || t.days_overdue <= 0);
             });
             responseData.awaitingFeedbackTasks = assigneeAtRiskTasks.filter(t =>
-              t.status === 'awaiting_feedback_internal' || t.status === 'awaiting_feedback_external'
+              t.status === DONEZY_AWAITING_INTERNAL || t.status === DONEZY_AWAITING_EXTERNAL
             );
           } else {
             // It's a client - show their client-level risk review
@@ -320,31 +395,23 @@ const handleGoogleChatWebhook = async (req: Request, res: Response): Promise<voi
       }
     }
 
-    // Generate response
     logger.info('Generating response', { queryType: query.type });
-    const responseText = responder.generateResponse(query, responseData);
-    logger.info('Response generated', { length: responseText?.length });
+    const parts = query.type === 'risk_review'
+      ? responder.generateRiskMessages(query.clientName, responseData)
+      : [responder.generateResponse(query, responseData)];
+    logger.info('Response generated', { parts: parts.length });
 
-    // Send response to Google Chat
     if (spaceName) {
       logger.info('Sending to Google Chat', { spaceName, threadName });
-      const messageData = {
-        text: `*Riley:*\n\n${responseText}`,
-        ...(threadName && { thread: { name: threadName } }),
-      };
-
-      try {
-        await googleChat.sendMessage(spaceName, messageData);
-        logger.info('Message sent to Google Chat successfully');
-      } catch (error) {
-        logger.error('Failed to send message to Google Chat', { error: String(error) });
-      }
+      const texts = parts.map((part, index) => (index === 0 ? `*Riley:*\n\n${part}` : part));
+      await replyTo(spaceName, threadName, parsed.text.replace(/@riley\b/i, '').trim(), texts, `query:${query.type}`);
+      logger.info('Messages sent to Google Chat');
     } else {
       logger.warn('No space name found');
     }
 
     // Return success to Google Chat
-    res.status(200).json({ status: 'ok' });
+    res.status(200).json({});
   } catch (error) {
     logger.error('Error processing webhook', { error: String(error), stack: error instanceof Error ? error.stack : 'N/A' });
     res.status(500).json({ error: 'Internal server error' });
@@ -358,6 +425,73 @@ app.post('/webhook/google-chat', handleGoogleChatWebhook);
 /**
  * Health check endpoint
  */
+app.post('/test/meeting-trigger', async (_req: Request, res: Response): Promise<void> => {
+  const now = new Date();
+  const since = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+  const ended = await hubspot.getEndedMeetings(since.toISOString(), now.toISOString());
+  const candidates = await meetingTrigger.scan(now, false);
+  res.status(200).json({
+    hubspot_meetings_with_actions: ended.map((m) => ({ id: m.id, title: m.title, endAt: m.endAt, company: m.companyName, actions: m.actionItems.length })),
+    count: candidates.length,
+    candidates,
+  });
+});
+
+app.post('/test/repost-proposal/:meetingId', async (req: Request, res: Response): Promise<void> => {
+  const candidate = await meetingTrigger.candidateFor(req.params.meetingId);
+  if (!candidate || candidate.status !== 'detected') {
+    res.status(200).json({ posted: false, status: candidate?.status ?? 'not_found' });
+    return;
+  }
+  const posted = await proposals.propose(candidate);
+  res.status(200).json({ posted, space: candidate.space_name, items: candidate.actionItems.length });
+});
+
+app.post('/test/project-review/:projectId', async (req: Request, res: Response): Promise<void> => {
+  const project = (await donezy.getOpenProjects()).find((p) => p.id === req.params.projectId);
+  if (!project) {
+    res.status(404).json({ error: 'no open project with that id' });
+    return;
+  }
+  const category = (req.query.category as ReviewCategory) || 'overdue';
+  const messages = await projectReview.messagesFor(project.id, project.name, category);
+  if (req.query.post === 'true') {
+    const target = process.env.PROPOSAL_FALLBACK_SPACE || process.env.GOOGLE_CHAT_SPACE_ID || '';
+    const members = await googleChat.listSpaceMembers(target);
+    for (const text of messages) {
+      await googleChat.postMessage(target, mentionizeText(text, members));
+    }
+  }
+  res.status(200).json({ project: project.name, messages });
+});
+
+app.post('/test/sample-proposal', async (_req: Request, res: Response): Promise<void> => {
+  const text = buildProposalText(
+    'Sample meeting',
+    [
+      { number: 1, title: 'Send campaign list video', task: 'Send Heather a quick video on the campaign list', assignee: 'Cherine Grove', existing_task: null },
+      { number: 2, title: 'Update firewall records', task: 'Update firewall and routing records', assignee: 'Jordan Morgan', existing_task: null },
+    ],
+    true,
+    'Sample Client',
+    ['<users/111111111111111111111>', '<users/222222222222222222222>'],
+    (name) => name
+  );
+  await googleChat.postMessage(process.env.GOOGLE_CHAT_SPACE_ID || '', text);
+  res.status(200).json({ posted: true });
+});
+
+app.post('/test/meeting-proposal', async (_req: Request, res: Response): Promise<void> => {
+  const candidates = await meetingTrigger.scan(new Date(), false);
+  const withActions = candidates.find((c) => c.actionItems.length > 0 && c.status !== 'duplicate');
+  if (!withActions) {
+    res.status(200).json({ posted: false, reason: 'no meeting with action items' });
+    return;
+  }
+  const posted = await proposals.propose(withActions);
+  res.status(200).json({ posted, meeting: withActions.title, items: withActions.actionItems.length });
+});
+
 app.get('/health', (_req: Request, res: Response) => {
   res.status(200).json({
     status: 'healthy',
@@ -450,8 +584,8 @@ app.post('/test/digest-detailed/:assignee', async (req: Request, res: Response):
 
     // Categorize by risk type
     const overdue = assigneeTasks.filter((t) => t.days_overdue && t.days_overdue > 0);
-    const awaitingFeedbackInternal = assigneeTasks.filter((t) => t.status === 'awaiting_feedback_internal');
-    const awaitingFeedbackExternal = assigneeTasks.filter((t) => t.status === 'awaiting_feedback_external');
+    const awaitingFeedbackInternal = assigneeTasks.filter((t) => t.status === DONEZY_AWAITING_INTERNAL);
+    const awaitingFeedbackExternal = assigneeTasks.filter((t) => t.status === DONEZY_AWAITING_EXTERNAL);
     const stale = assigneeTasks.filter((t) => {
       const daysSinceUpdate = Math.floor((now.getTime() - new Date(t.updated_at).getTime()) / (1000 * 60 * 60 * 24));
       return daysSinceUpdate >= 7 && !t.days_overdue;
@@ -542,7 +676,7 @@ app.post('/test/digest/:assignee', async (req: Request, res: Response): Promise<
       if (task.days_overdue && task.days_overdue > 0) return true;
 
       // Check if awaiting feedback 24+ hours
-      if (task.status === 'awaiting_feedback_internal' || task.status === 'awaiting_feedback_external') {
+      if (task.status === DONEZY_AWAITING_INTERNAL || task.status === DONEZY_AWAITING_EXTERNAL) {
         const hoursSinceUpdate = Math.floor((now.getTime() - new Date(task.updated_at).getTime()) / (1000 * 60 * 60));
         if (hoursSinceUpdate >= 24) return true;
       }
@@ -561,7 +695,7 @@ app.post('/test/digest/:assignee', async (req: Request, res: Response): Promise<
       return daysSinceUpdate >= 7;
     });
     const awaitingFeedback = atRiskTasks.filter(
-      (t) => t.status === 'awaiting_feedback_internal' || t.status === 'awaiting_feedback_external'
+      (t) => t.status === DONEZY_AWAITING_INTERNAL || t.status === DONEZY_AWAITING_EXTERNAL
     );
 
     res.status(200).json({

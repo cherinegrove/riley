@@ -52,13 +52,18 @@ export interface VribbleMeeting {
 }
 
 // Donezy types
+export const donezyTaskUrl = (id: string): string => `https://app.donezy.io/tasks/${id}`;
+export const DONEZY_CLOSED_STATUSES = ['done', 'backlog'];
+export const DONEZY_AWAITING_INTERNAL = 'awaiting-feedback-(internal)';
+export const DONEZY_AWAITING_EXTERNAL = 'awaiting-ext';
+
 export interface DonezyTask {
   id: string;
   title: string;
   description?: string;
   project_name?: string;
-  status: 'todo' | 'in_progress' | 'completed' | 'blocked' | 'awaiting_feedback_internal' | 'awaiting_feedback_external' | 'done' | 'backlog';
-  priority: 'low' | 'medium' | 'high' | 'critical';
+  status: string;
+  priority: string;
   assigned_to: string;
   due_date?: string;
   created_at: string;

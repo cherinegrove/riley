@@ -1,4 +1,6 @@
-import { RileyQuery, DonezyTask, HubSpotDeal, HubSpotContact } from '../utils/types';
+import { RileyQuery, DonezyTask, HubSpotDeal, HubSpotContact, DONEZY_AWAITING_EXTERNAL, DONEZY_AWAITING_INTERNAL, DONEZY_CLOSED_STATUSES } from '../utils/types';
+
+const MAX_LISTED = 25;
 
 export interface ResponseData {
   meetings?: Array<{ id: string; title: string; date: string; summary: string; actionItems: string[] }>;
@@ -126,6 +128,94 @@ export class RileyResponder {
     return response.trim();
   }
 
+  generateRiskMessages(clientName: string | undefined, data: ResponseData): string[] {
+    if (!clientName) {
+      return [`I need a name to check. Try: "@Riley /risk [Name or Client]"`];
+    }
+
+    const now = new Date();
+    const daysSince = (iso: string) => Math.floor((now.getTime() - new Date(iso).getTime()) / (1000 * 60 * 60 * 24));
+    const hoursSince = (iso: string) => Math.floor((now.getTime() - new Date(iso).getTime()) / (1000 * 60 * 60));
+    const messages: string[] = [`*Risk review for ${clientName}*`];
+
+    if (data.unrepliedEmails && data.unrepliedEmails.length > 0) {
+      let text = `📧 *EMAILS AWAITING REPLY (${data.unrepliedEmails.length}):*\n`;
+      data.unrepliedEmails.slice(0, MAX_LISTED).forEach((email) => {
+        const hours = hoursSince(email.date);
+        const days = Math.floor(hours / 24);
+        const timeStr = days > 0 ? `${days}d ${hours % 24}h` : `${hours}h`;
+        text += `  • "${email.subject}" from ${email.from} - awaiting ${timeStr}\n`;
+      });
+      messages.push(text.trimEnd());
+    }
+
+    if (data.meetings && data.meetings.length > 0) {
+      const taskTitles = (data.tasks || []).map((t) => t.title.toLowerCase());
+      const missingActions: Array<{ item: string; meeting: string }> = [];
+      for (const meeting of data.meetings) {
+        for (const actionItem of meeting.actionItems || []) {
+          const actionLower = actionItem.toLowerCase();
+          const hasTask = taskTitles.some((taskTitle) =>
+            taskTitle.includes(actionLower.substring(0, 30)) || actionLower.includes(taskTitle.substring(0, 30))
+          );
+          if (!hasTask) {
+            missingActions.push({ item: actionItem, meeting: meeting.title });
+          }
+        }
+      }
+      if (missingActions.length > 0) {
+        let text = `📋 *MISSING TASKS FROM MEETINGS (${missingActions.length}):*\n`;
+        missingActions.slice(0, MAX_LISTED).forEach((action) => {
+          text += `  • "${action.item}" from "${action.meeting}"\n`;
+        });
+        messages.push(text.trimEnd());
+      }
+    }
+
+    if (data.overdueTasks && data.overdueTasks.length > 0) {
+      let text = `🚨 *OVERDUE TASKS (${data.overdueTasks.length}):*\n`;
+      data.overdueTasks.slice(0, MAX_LISTED).forEach((task) => {
+        text += `  • ${task.title} - ${task.days_overdue || 0} days overdue [${task.assigned_to}]\n`;
+      });
+      messages.push(text.trimEnd());
+    }
+
+    if (data.awaitingFeedbackTasks && data.awaitingFeedbackTasks.length > 0) {
+      const internal = data.awaitingFeedbackTasks.filter((t) => (t.status as string) === DONEZY_AWAITING_INTERNAL);
+      const external = data.awaitingFeedbackTasks.filter((t) => (t.status as string) === DONEZY_AWAITING_EXTERNAL);
+
+      if (internal.length > 0) {
+        let text = `⏰ *AWAITING INTERNAL FEEDBACK (${internal.length}):*\n`;
+        internal.slice(0, MAX_LISTED).forEach((task) => {
+          text += `  • ${task.title} - waiting ${hoursSince(task.updated_at)}h [${task.assigned_to}]\n`;
+        });
+        messages.push(text.trimEnd());
+      }
+
+      if (external.length > 0) {
+        let text = `⏰ *AWAITING EXTERNAL FEEDBACK (${external.length}):*\n`;
+        external.slice(0, MAX_LISTED).forEach((task) => {
+          text += `  • ${task.title} - waiting ${daysSince(task.updated_at)} days [${task.assigned_to}]\n`;
+        });
+        messages.push(text.trimEnd());
+      }
+    }
+
+    if (data.staleTasks && data.staleTasks.length > 0) {
+      let text = `⏳ *NOT UPDATED 7+ DAYS (${data.staleTasks.length}):*\n`;
+      data.staleTasks.slice(0, MAX_LISTED).forEach((task) => {
+        text += `  • ${task.title} - not updated ${daysSince(task.updated_at)} days [${task.assigned_to}]\n`;
+      });
+      messages.push(text.trimEnd());
+    }
+
+    if (messages.length === 1) {
+      messages.push(`✅ Nothing at risk for ${clientName}`);
+    }
+
+    return messages;
+  }
+
   private generateClientStatusResponse(clientName: string | undefined, data: ResponseData): string {
     if (!clientName) {
       return `I need a client name to check their status. Try: "@Riley how are we doing on [Client Name]?"`;
@@ -177,35 +267,35 @@ export class RileyResponder {
     // 3. OVERDUE TASKS (with days overdue)
     if (data.overdueTasks && data.overdueTasks.length > 0) {
       response += `\n🚨 *OVERDUE TASKS (${data.overdueTasks.length}):*\n`;
-      data.overdueTasks.slice(0, 5).forEach((task) => {
+      data.overdueTasks.slice(0, MAX_LISTED).forEach((task) => {
         const daysOverdue = task.days_overdue || 0;
         response += `  • ${task.title} - ${daysOverdue} days overdue [${task.assigned_to}]\n`;
       });
-      if (data.overdueTasks.length > 5) {
-        response += `  ...and ${data.overdueTasks.length - 5} more\n`;
+      if (data.overdueTasks.length > MAX_LISTED) {
+        response += `  ...and ${data.overdueTasks.length - MAX_LISTED} more\n`;
       }
     }
 
     // 4. TASKS NOT UPDATED (with days since update)
     if (data.staleTasks && data.staleTasks.length > 0) {
       response += `\n⏳ *TASKS NOT UPDATED 7+ DAYS (${data.staleTasks.length}):*\n`;
-      data.staleTasks.slice(0, 5).forEach((task) => {
+      data.staleTasks.slice(0, MAX_LISTED).forEach((task) => {
         const daysSinceUpdate = Math.floor((now.getTime() - new Date(task.updated_at).getTime()) / (1000 * 60 * 60 * 24));
         response += `  • ${task.title} - not updated ${daysSinceUpdate} days [${task.assigned_to}]\n`;
       });
-      if (data.staleTasks.length > 5) {
-        response += `  ...and ${data.staleTasks.length - 5} more\n`;
+      if (data.staleTasks.length > MAX_LISTED) {
+        response += `  ...and ${data.staleTasks.length - MAX_LISTED} more\n`;
       }
     }
 
     // 5. AWAITING FEEDBACK TASKS (with time in state)
     if (data.awaitingFeedbackTasks && data.awaitingFeedbackTasks.length > 0) {
-      const internal = data.awaitingFeedbackTasks.filter((t) => (t.status as string) === 'awaiting_feedback_internal');
-      const external = data.awaitingFeedbackTasks.filter((t) => (t.status as string) === 'awaiting_feedback_external');
+      const internal = data.awaitingFeedbackTasks.filter((t) => (t.status as string) === DONEZY_AWAITING_INTERNAL);
+      const external = data.awaitingFeedbackTasks.filter((t) => (t.status as string) === DONEZY_AWAITING_EXTERNAL);
 
       if (internal.length > 0) {
         response += `\n⏰ *AWAITING INTERNAL FEEDBACK 48+ HOURS (${internal.length}):*\n`;
-        internal.slice(0, 3).forEach((task) => {
+        internal.slice(0, MAX_LISTED).forEach((task) => {
           const hoursSince = Math.floor((now.getTime() - new Date(task.updated_at).getTime()) / (1000 * 60 * 60));
           response += `  • ${task.title} - waiting ${hoursSince}h [${task.assigned_to}]\n`;
         });
@@ -213,7 +303,7 @@ export class RileyResponder {
 
       if (external.length > 0) {
         response += `\n⏰ *AWAITING EXTERNAL FEEDBACK 7+ DAYS (${external.length}):*\n`;
-        external.slice(0, 3).forEach((task) => {
+        external.slice(0, MAX_LISTED).forEach((task) => {
           const daysSince = Math.floor((now.getTime() - new Date(task.updated_at).getTime()) / (1000 * 60 * 60 * 24));
           response += `  • ${task.title} - waiting ${daysSince} days [${task.assigned_to}]\n`;
         });
@@ -255,7 +345,7 @@ export class RileyResponder {
       return response;
     }
 
-    const completed = projectTasks.filter((t) => t.status === 'completed').length;
+    const completed = projectTasks.filter((t) => t.status === 'done').length;
     const total = projectTasks.length;
     const progress = Math.round((completed / total) * 100);
 
@@ -285,7 +375,7 @@ export class RileyResponder {
   }
 
   private generateOverdueTasksResponse(data: ResponseData): string {
-    const overdueTasks = (data.tasks || []).filter((t) => t.days_overdue && t.days_overdue > 0 && t.status !== 'completed');
+    const overdueTasks = (data.tasks || []).filter((t) => t.days_overdue && t.days_overdue > 0 && !DONEZY_CLOSED_STATUSES.includes(t.status));
 
     if (overdueTasks.length === 0) {
       return `✅ No overdue tasks! Everything is on track.`;
